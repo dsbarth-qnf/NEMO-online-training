@@ -184,8 +184,8 @@ class Training(SerializationByNameModel):
                 "<li style='list-style: initial'><b>completion_token</b>: the completion token</li>"
                 "</ul>"
                 "<p>Media files can be used with <code>{% url 'public_online_training_media' completion_token 'media_file_path' %}</code></p>"
-                "<p>Upon completion, call the JS function: <code>training_completed(dict_data)</code> to complete the training</p>"
-                "<p>Forms with ID <code>training-quiz-form</code> will automatically have the form data saved in the training attempt</p>"
+                "<p>Upon completion, call the JS function: <code>complete_training(button, data, event)</code> to complete the training</p>"
+                "<p>The legacy JS function will also still work: <code>training_completed(dict_data)</code></p>"
                 "<p>To display user responses in the View Responses popup: Ensure that the keys in your <code>dataToSave</code> JSON object exactly match the id or name attributes of the input elements in your HTML</p>"
             )
         ),
@@ -230,6 +230,19 @@ class Training(SerializationByNameModel):
 
 
 class Action(BaseModel):
+    class TriggerCondition(models.TextChoices):
+        ON_PASS = "on_pass", _("On Pass")
+        ON_FAIL = "on_fail", _("On Failure")
+        ALWAYS = "always", _("Always")
+
+    training = models.ForeignKey(Training, on_delete=models.CASCADE)
+    action_type = models.CharField(max_length=CHAR_FIELD_SMALL_LENGTH)
+    trigger_condition = models.CharField(
+        max_length=10,
+        choices=TriggerCondition.choices,
+        default=TriggerCondition.ON_PASS,
+        help_text=_("Select when this action should execute."),
+    )
     training = models.ForeignKey(Training, on_delete=models.CASCADE)
     action_type = models.CharField(max_length=CHAR_FIELD_SMALL_LENGTH)
     configuration = models.JSONField(
@@ -261,6 +274,18 @@ class Action(BaseModel):
 
     def applies_to_user(self, training_user) -> bool:
         return UserTypeFilterField.applies_to_user(self.user_filter, training_user)
+
+    def applies_to_record(self, training_record) -> bool:
+        """Checks if the action applies to user type and the record's failed status."""
+        if not self.applies_to_user(training_record.training_user):
+            return False
+
+        if self.trigger_condition == self.TriggerCondition.ON_PASS and training_record.failed:
+            return False
+        if self.trigger_condition == self.TriggerCondition.ON_FAIL and not training_record.failed:
+            return False
+
+        return True
 
     def __str__(self):
         return f"{self.action_type} for {self.training.name}"

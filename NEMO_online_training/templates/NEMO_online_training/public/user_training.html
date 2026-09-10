@@ -12,28 +12,17 @@
     <h3>{{ online_training_user.training.name }}</h3>
     {{ online_training_rendered|safe }}
     <script>
-        function training_completed(inputData, event) {
+        function complete_training(button, inputData, event) {
             if (event) event.preventDefault();
 
             let dataString = "";
-            let $submitBtn = null;
-
-            if (inputData instanceof Event) {
-                event = inputData;
-                event.preventDefault();
-                inputData = event.target;
-            }
+            let $submitBtn = button ? $(button) : null;
 
             if (inputData instanceof HTMLFormElement) {
                 dataString = $(inputData).serialize();
-                $submitBtn = $(inputData).find('button[type="submit"], input[type="submit"]');
             } else {
                 if (inputData === undefined) inputData = {};
                 dataString = $.param(inputData);
-            }
-
-            if (!$submitBtn || $submitBtn.length === 0) {
-                $submitBtn = $('button[type="submit"], #completeBtn');
             }
 
             let originalText = "";
@@ -51,7 +40,6 @@
                 "{% url 'public_online_training_complete_user_training' %}",
                 dataString,
                 function(response_data) {
-                    // Check if training is graded using Django template context
                     const isGraded = {% if online_training_user.training.answer_key %}true{% else %}false{% endif %};
 
                     if (isGraded && response_data) {
@@ -59,21 +47,19 @@
                             alert("Congratulations! You passed with a score of " + response_data.score + "%");
                         } else {
                             let attemptMsg = "";
-                            if (response_data.attempts_remaining === "unlimited" || response_data.attempts_remaining === null || response_data.attempts_remaining === undefined) {
+                            if (response_data.attempts_remaining === "unlimited" || response_data.attempts_remaining == null) {
                                 attemptMsg = "You have unlimited attempts. You can try again.";
                             } else if (response_data.attempts_remaining > 0) {
                                 attemptMsg = "Attempts remaining: " + response_data.attempts_remaining;
                             } else {
                                 attemptMsg = "You have no attempts remaining. Please contact staff.";
                             }
-
                             alert("Quiz Failed. Score: " + response_data.score + "%\n" + attemptMsg);
                         }
                     }
-                    window.location.href = "{% url 'online_user_trainings' %}";
+                    window.location.reload();
                 },
                 function(xhr, status, error) {
-                    // Restore button on failure
                     if ($submitBtn && $submitBtn.length > 0) {
                         $submitBtn.prop('disabled', false);
                         $submitBtn.text(originalText);
@@ -83,10 +69,9 @@
             );
         }
 
-        // Auto-listen for forms with id="training-quiz-form" (using jQuery delegation)
-        $(document).on("submit", "#training-quiz-form", function(e) {
-            training_completed(this, e);
-        });
+        function training_completed(inputData, event) {
+            complete_training(null, inputData, event);
+        }
 
         function update_timer(timer_interval_id)
         {

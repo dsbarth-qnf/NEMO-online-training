@@ -6,13 +6,11 @@ from logging import getLogger
 from typing import Optional
 
 from NEMO.constants import MEDIA_PROTECTED
-from NEMO.decorators import user_office_or_manager_required, staff_member_or_user_office_required
 from NEMO.models import User, UserType
-from NEMO.utilities import format_datetime, queryset_search_filter, render_email_template, send_mail
-from NEMO.views.customization import get_media_file_contents
+from NEMO.utilities import format_datetime, queryset_search_filter, render_email_template
 from NEMO.views.pagination import SortedPaginator
 from django.conf import settings
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
 from django.db.models import Q
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
@@ -29,9 +27,18 @@ from django.views.static import serve
 from NEMO_online_training.customization import OnlineTrainingCustomization
 from NEMO_online_training.forms import TrainingRecordForm, TrainingUserForm
 from NEMO_online_training.models import Training, TrainingRecord, TrainingUser, TrainingAttempt
-from NEMO_online_training.utilities import ONLINE_TRAINING_EMAIL_CATEGORY
 
 online_training_logger = getLogger(__name__)
+
+
+def online_training_permissions(user):
+    return user.is_active and (
+        user.is_facility_manager
+        or user.is_staff
+        or user.is_user_office
+        or user.is_superuser
+        or user.has_perm("NEMO-online-training.add_training")
+    )
 
 
 @login_required
@@ -90,7 +97,7 @@ def user_online_trainings(request, training_user_id=None):
 
 
 @require_GET
-@user_office_or_manager_required
+@user_passes_test(online_training_permissions)
 def search_training_users(request):
     return render(
         request,
@@ -99,7 +106,7 @@ def search_training_users(request):
     )
 
 
-@user_office_or_manager_required
+@user_passes_test(online_training_permissions)
 @require_GET
 def training_users_search_results(request):
     nemo_users: HttpResponse = queryset_search_filter(
@@ -113,7 +120,7 @@ def training_users_search_results(request):
     )
 
 
-@user_office_or_manager_required
+@user_passes_test(online_training_permissions)
 @require_GET
 def create_training_user_from_nemo_user(request, nemo_user_id):
     nemo_user = get_object_or_404(User, pk=nemo_user_id)
@@ -121,7 +128,7 @@ def create_training_user_from_nemo_user(request, nemo_user_id):
     return redirect("online_user_trainings", training_user_id=training_user.id)
 
 
-@user_office_or_manager_required
+@user_passes_test(online_training_permissions)
 @require_POST
 def create_training_user(request):
     form = TrainingUserForm(request.POST or None)
@@ -208,7 +215,7 @@ def training(request, user_training_id):
     return redirect(online_training_user.generate_link())
 
 
-@user_office_or_manager_required
+@user_passes_test(online_training_permissions)
 @require_POST
 def add_training_to_user(request, training_user_id, online_training_id):
     training_user = get_object_or_404(TrainingUser, pk=training_user_id)
@@ -363,7 +370,7 @@ def public_complete_user_training(request):
         else:
             attempts_remaining = max_attempts - attempts_taken
         # Only finalize the record (mark complete, fire actions) if they passed
-        if attempt.passed:
+        if attempt.passed or online_training_user.failed:
             online_training_user.complete(data)
 
         return JsonResponse(
@@ -467,24 +474,22 @@ def process_training_submission(training_record, user_responses):
     # SCENARIO B: Grading Required
     correct_count = 0
     answer_key = training.answer_key if isinstance(training.answer_key, dict) else {}
-    graded_questions = {k: v for k, v in answer_key.items() if not k.startswith("_")}
-    total_questions = len(graded_questions)
-    for question_key, correct_answer in graded_questions.items():
+    total_questions = len(answer_key)
+    for question_key, correct_answer in answer_key.items():
         user_answer = user_responses.get(question_key)
         if isinstance(correct_answer, list):
-            # Ensure user answer is list for comparison
             if not isinstance(user_answer, list):
                 user_answer = [user_answer] if user_answer else []
 
-            # Order independent comparison using Sets
             if set(str(x).strip() for x in correct_answer) == set(str(x).strip() for x in user_answer):
                 correct_count += 1
         else:
             if str(correct_answer).strip() == str(user_answer).strip():
                 correct_count += 1
 
-    score = (correct_count / total_questions) * 100 if total_questions > 0 else 100
+    score = (correct_count / total_questions) * 100 if total_questions > 0 else 100.0
     passed = score >= training.passing_score_percentage
+
     attempt = TrainingAttempt.objects.create(
         training_record=training_record, score_percentage=score, passed=passed, responses=user_responses
     )
@@ -494,49 +499,11 @@ def process_training_submission(training_record, user_responses):
         if training.max_attempts and attempts_taken >= training.max_attempts:
             training_record.failed = True
             training_record.save(update_fields=["failed"])
-            _notify_staff_of_failure(training_record)
+
     return attempt
 
 
-def _notify_staff_of_failure(training_record):
-    """Fires email when user completely exhausts all retries."""
-
-    target_email = None
-
-    try:
-        target_email = training_record.training.answer_key.get("_failure_email")
-    except Exception:
-        pass
-    if not target_email:
-        target_email = OnlineTrainingCustomization.get("online_training_default_failure_email_address")
-    if target_email:
-        staff_emails = [e.strip() for e in target_email.split(",") if e.strip()]
-
-    try:
-        email_template_content = get_media_file_contents("online_training_failure_email.html")
-    except:
-        pass
-    if not email_template_content or not target_email:
-        return
-
-    message = render_email_template(
-        email_template_content,
-        {
-            "training_user": training_record.training_user,
-            "training": training_record.training,
-            "record": training_record,
-        },
-    )
-    send_mail(
-        subject=f"Training Failed: {training_record.training_user.first_name} {training_record.training_user.last_name}",
-        content=message,
-        from_email=None,
-        to=staff_emails,
-        email_category=ONLINE_TRAINING_EMAIL_CATEGORY,
-    )
-
-
-@staff_member_or_user_office_required
+@user_passes_test(online_training_permissions)
 def view_quiz_responses(request, record_id):
     record = get_object_or_404(TrainingRecord, id=record_id)
     training = record.training
@@ -589,7 +556,7 @@ def view_quiz_responses(request, record_id):
     return render(request, "NEMO_online_training/user_trainings/responses_modal_content.html", context)
 
 
-@staff_member_or_user_office_required(login_url=None)
+@user_passes_test(online_training_permissions)
 @require_POST
 def clear_for_retake(request, record_id):
     # Retrieve the failed record

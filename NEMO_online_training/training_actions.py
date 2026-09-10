@@ -42,7 +42,7 @@ class OnlineTrainingActionHandler(ABC):
             raise ValidationError(_("Configuration must be a dictionary"))
 
     def perform(self, action, user_training) -> None:
-        if action.applies_to_user(user_training.training_user):
+        if action.applies_to_record(user_training):
             self.do_perform(action, user_training)
 
     @abstractmethod
@@ -135,7 +135,7 @@ class RemoveTrainingRequiredOnlineTrainingHandler(OnlineTrainingActionHandler):
 
     def do_perform(self, action, user_training) -> None:
         # If the user is linked to a NEMO user and has training required
-        if user_training.training_user.nemo_user and user_training.training.training_required:
+        if user_training.training_user.nemo_user and user_training.training_user.training_required:
             nemo_user = user_training.training_user.nemo_user
             nemo_user.training_required = False
             nemo_user.save(update_fields=["training_required"])

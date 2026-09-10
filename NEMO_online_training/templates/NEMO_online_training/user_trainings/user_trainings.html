@@ -365,7 +365,7 @@
     }
 
     function view_responses(record_id) {
-        let url = "{% url 'online_training_view_responses' '99999' %}".replace('99999', record_id);
+        let url = build_django_url("{% url 'online_training_view_responses' '99999' %}", ["99999"], [record_id]);
 
         // Show modal with a loading state
         $('#quiz-response-modal-body').html('<p class="text-center">Loading responses...</p>');

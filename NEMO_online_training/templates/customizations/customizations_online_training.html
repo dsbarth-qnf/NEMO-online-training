@@ -32,22 +32,6 @@
             </div>
         </div>
         <div class="form-group">
-            <label class="control-label col-xs-3 col-md-2" for="online_training_default_failure_email_address">
-                Failure notification email
-            </label>
-            <div class="col-md-8 col-xs-9">
-                <input type="email"
-                       class="form-control"
-                       id="online_training_default_failure_email_address"
-                       name="online_training_default_failure_email_address"
-                       value="{{ customizations|get_item:"online_training_default_failure_email_address" }}"
-                       placeholder="e.g. staff@example.com">
-                <div class="help-block light-grey">
-                    The default email address to notify when a user fails a quiz and exhausts all retries. This can be overridden per training via the JSON configuration.
-                </div>
-            </div>
-        </div>
-        <div class="form-group">
             <label class="control-label col-xs-3 col-md-2" for="online_training_user_unique_email">User email</label>
             <div class="col-md-10 col-xs-9">
                 <input type="hidden" name="online_training_user_unique_email" value="off" />
@@ -104,24 +88,4 @@
         </li>
     </ul>
     {% include 'customizations/customizations_upload.html' with element=online_training_send_new_link_email name='online training send new link email' key='online_training' %}
-</div>
-<!-- New Failure Email Upload Panel -->
-<div class="panel-body">
-    <h3 class="customization-section-title" id="online_training_failure_email_id">
-        {{ customizations|get_item:"online_training_feature_name" }} quiz failure email
-    </h3>
-    <p>This email is sent to the designated staff address when a user fails a quiz and exhausts all allowed retries.</p>
-    <p>The following context variables are provided when the email is rendered:</p>
-    <ul>
-        <li>
-            <b>training_user</b> - the user who failed the training
-        </li>
-        <li>
-            <b>training</b> - the training they failed
-        </li>
-        <li>
-            <b>record</b> - the specific training record
-        </li>
-    </ul>
-    {% include 'customizations/customizations_upload.html' with element=online_training_failure_email name='online training failure email' key='online_training' %}
 </div>

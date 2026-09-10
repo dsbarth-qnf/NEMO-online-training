@@ -9,12 +9,10 @@ class OnlineTrainingCustomization(CustomizationBase):
         "online_training_link_validity_minutes": "7200",  # 5 days
         "online_training_user_unique_email": "enabled",
         "online_training_user_type_required": "",
-        "online_training_default_failure_email_address": "",
     }
 
     files = [
         ("online_training_send_new_link_email", ".html"),
-        ("online_training_failure_email", ".html"),
     ]
 
     def __init__(self, key, title):
