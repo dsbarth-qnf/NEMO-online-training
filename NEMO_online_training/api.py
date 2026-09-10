@@ -5,7 +5,7 @@ from rest_flex_fields.serializers import FlexFieldsSerializerMixin
 from NEMO_online_training.models import Training, Action, TrainingRecord, TrainingUser
 
 
-class TrainingSerializer(ModelSerializer):
+class TrainingSerializer(FlexFieldsSerializerMixin, ModelSerializer):
     class Meta:
         model = Training
         fields = "__all__"

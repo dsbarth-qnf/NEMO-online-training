@@ -10,7 +10,12 @@ from django.utils import timezone
 from NEMO_online_training.fields import UserTypeFilterField
 from NEMO_online_training.models import Training, Action, TrainingRecord, TrainingUser
 from NEMO_online_training.training_actions import action_handlers
-from NEMO_online_training.utilities import ONLINE_TRAINING_ACTION_EXTEND_ACCESS, ONLINE_TRAINING_ACTION_SEND_EMAIL
+from NEMO_online_training.utilities import (
+    ONLINE_TRAINING_ACTION_EXTEND_ACCESS,
+    ONLINE_TRAINING_ACTION_GRANT_PHYSICAL_ACCESS,
+    ONLINE_TRAINING_ACTION_QUALIFY_TOOL,
+    ONLINE_TRAINING_ACTION_SEND_EMAIL,
+)
 
 
 class OnlineTrainingTest(NEMOTestCaseMixin, TestCase):
@@ -319,3 +324,145 @@ class OnlineTrainingTest(NEMOTestCaseMixin, TestCase):
         # Verify action was NOT triggered (student's access should remain unchanged)
         self.student_user.refresh_from_db()
         self.assertEqual(self.student_user.access_expiration, initial_date)
+
+    def test_grant_physical_access_new_users_only(self):
+        """Test that grant physical access rejects new user filters."""
+        action = Action.objects.create(
+            training=self.training,
+            action_type=ONLINE_TRAINING_ACTION_GRANT_PHYSICAL_ACCESS,
+            configuration={"physical_access_level_ids": [1]},
+            user_filter=UserTypeFilterField.ALL_NEW_USERS,
+        )
+        self.assertRaises(ValidationError, action.full_clean)
+
+    def test_grant_physical_access_missing_config_field(self):
+        """Test that grant physical access requires physical_access_level_ids."""
+        action = Action.objects.create(
+            training=self.training,
+            action_type=ONLINE_TRAINING_ACTION_GRANT_PHYSICAL_ACCESS,
+            configuration={},
+            user_filter=UserTypeFilterField.ALL_NEMO_USERS,
+        )
+        self.assertRaises(ValidationError, action.full_clean)
+
+    def test_grant_physical_access_nonexistent_ids(self):
+        """Test that grant physical access validates that IDs exist in the database."""
+        action = Action.objects.create(
+            training=self.training,
+            action_type=ONLINE_TRAINING_ACTION_GRANT_PHYSICAL_ACCESS,
+            configuration={"physical_access_level_ids": [99999]},
+            user_filter=UserTypeFilterField.ALL_NEMO_USERS,
+        )
+        self.assertRaises(ValidationError, action.full_clean)
+
+    def test_grant_physical_access_performs(self):
+        """Test that grant physical access adds access levels to a NEMO user."""
+        from NEMO.models import Area, PhysicalAccessLevel
+
+        area = Area.objects.create(name="Test Area")
+        pal = PhysicalAccessLevel.objects.create(
+            name="Test Level",
+            area=area,
+            schedule=PhysicalAccessLevel.Schedule.ALWAYS,
+        )
+
+        action = Action.objects.create(
+            training=self.training,
+            action_type=ONLINE_TRAINING_ACTION_GRANT_PHYSICAL_ACCESS,
+            configuration={"physical_access_level_ids": [pal.id]},
+            user_filter=UserTypeFilterField.ALL_NEMO_USERS,
+        )
+        action.full_clean()
+
+        self.assertFalse(self.staff_user.physical_access_levels.filter(pk=pal.pk).exists())
+
+        user_training = TrainingRecord.objects.create(training=self.training, training_user=self.new_staff)
+        action_handlers[action.action_type].perform(action, user_training)
+
+        self.assertTrue(self.staff_user.physical_access_levels.filter(pk=pal.pk).exists())
+
+    def test_grant_physical_access_skips_unlinked_user(self):
+        """Test that grant physical access does not apply to users without a NEMO account."""
+        from NEMO.models import Area, PhysicalAccessLevel
+
+        area = Area.objects.create(name="Test Area 2")
+        pal = PhysicalAccessLevel.objects.create(
+            name="Test Level 2",
+            area=area,
+            schedule=PhysicalAccessLevel.Schedule.ALWAYS,
+        )
+
+        action = Action.objects.create(
+            training=self.training,
+            action_type=ONLINE_TRAINING_ACTION_GRANT_PHYSICAL_ACCESS,
+            configuration={"physical_access_level_ids": [pal.id]},
+            user_filter=UserTypeFilterField.ALL_NEMO_USERS,
+        )
+
+        self.assertFalse(action.applies_to_user(self.new_only))
+
+    def test_qualify_on_tool_new_users_only(self):
+        """Test that qualify on tool rejects new user filters."""
+        action = Action.objects.create(
+            training=self.training,
+            action_type=ONLINE_TRAINING_ACTION_QUALIFY_TOOL,
+            configuration={"tool_ids": [1]},
+            user_filter=UserTypeFilterField.ALL_NEW_USERS,
+        )
+        self.assertRaises(ValidationError, action.full_clean)
+
+    def test_qualify_on_tool_missing_config_field(self):
+        """Test that qualify on tool requires tool_ids."""
+        action = Action.objects.create(
+            training=self.training,
+            action_type=ONLINE_TRAINING_ACTION_QUALIFY_TOOL,
+            configuration={},
+            user_filter=UserTypeFilterField.ALL_NEMO_USERS,
+        )
+        self.assertRaises(ValidationError, action.full_clean)
+
+    def test_qualify_on_tool_nonexistent_ids(self):
+        """Test that qualify on tool validates that IDs exist in the database."""
+        action = Action.objects.create(
+            training=self.training,
+            action_type=ONLINE_TRAINING_ACTION_QUALIFY_TOOL,
+            configuration={"tool_ids": [99999]},
+            user_filter=UserTypeFilterField.ALL_NEMO_USERS,
+        )
+        self.assertRaises(ValidationError, action.full_clean)
+
+    def test_qualify_on_tool_performs(self):
+        """Test that qualify on tool qualifies a NEMO user on the specified tools."""
+        from NEMO.models import Tool
+
+        tool = Tool.objects.create(name="Test Tool", primary_owner=self.staff_user)
+
+        action = Action.objects.create(
+            training=self.training,
+            action_type=ONLINE_TRAINING_ACTION_QUALIFY_TOOL,
+            configuration={"tool_ids": [tool.id]},
+            user_filter=UserTypeFilterField.ALL_NEMO_USERS,
+        )
+        action.full_clean()
+
+        self.assertFalse(tool.user_set.filter(pk=self.student_user.pk).exists())
+
+        user_training = TrainingRecord.objects.create(training=self.training, training_user=self.new_student)
+        action_handlers[action.action_type].perform(action, user_training)
+
+        self.assertTrue(tool.user_set.filter(pk=self.student_user.pk).exists())
+
+    def test_qualify_on_tool_skips_unlinked_user(self):
+        """Test that qualify on tool does not apply to users without a NEMO account."""
+        from NEMO.models import Tool
+
+        tool = Tool.objects.create(name="Test Tool 2", primary_owner=self.staff_user)
+
+        action = Action.objects.create(
+            training=self.training,
+            action_type=ONLINE_TRAINING_ACTION_QUALIFY_TOOL,
+            configuration={"tool_ids": [tool.id]},
+            user_filter=UserTypeFilterField.ALL_NEMO_USERS,
+        )
+
+        self.assertFalse(action.applies_to_user(self.new_only))

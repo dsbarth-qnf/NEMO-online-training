@@ -32,7 +32,7 @@ Issues = "https://github.com/usnistgov/NEMO-online-training/issues"
 
 [project.optional-dependencies]
 NEMO-CE = ["NEMO-CE>=7.4.5",]
-NEMO = ["NEMO>=7.4.1",]
+NEMO = ["NEMO>=8.1.0",]
 dev-tools = ["pre-commit", "djlint", "black"]
 
 [tool.setuptools.packages.find]
