@@ -145,17 +145,7 @@
                                                     <tbody>
                                                         {% for training_record in training_user.trainingrecord_set.all %}
                                                             <tr class="{% if training_record.completed %}success{% elif training_record.failed or training_record.has_training_expired %}danger{% endif %}">
-                                                                <td>
-                                                                    {% if training_record.attempts.exists and user_is_staff %}
-                                                                        <a href="javascript:void(0);"
-                                                                           onclick="view_responses({{ training_record.id }})"
-                                                                           title="Click to view responses">
-                                                                            {{ training_record.training.name }}
-                                                                        </a>
-                                                                    {% else %}
-                                                                        {{ training_record.training.name }}
-                                                                    {% endif %}
-                                                                </td>
+                                                                <td>{{ training_record.training.name }}</td>
                                                                 <td class="text-center">{{ training_record.creation_time|date:"SHORT_DATETIME_FORMAT" }}</td>
                                                                 <td class="text-center">
                                                                     {% if not training_record.completed and not training_record.has_training_expired and not training_record.failed %}
@@ -167,9 +157,7 @@
                                                                 <td class="text-center">{{ training_record.end|default_if_none:""|date:"SHORT_DATETIME_FORMAT" }}</td>
                                                                 {% if user_is_staff %}<td class="text-center">{{ training_record.completion_time|default_if_none:"" }}</td>{% endif %}
                                                                 <td class="text-right">
-                                                                    {% if training_record.completed %}
-                                                                        <span class="label label-success">Completed</span>
-                                                                    {% elif training_record.failed %}
+                                                                    {% if training_record.failed %}
                                                                         <span class="label label-danger" style="margin-bottom: 5px; display: inline-block;">Failed</span>
                                                                         {% if user_is_staff %}
                                                                             <br>
@@ -179,6 +167,8 @@
                                                                                 <span class="label label-info">Cleared for retake</span>
                                                                             {% endif %}
                                                                         {% endif %}
+                                                                    {% elif training_record.completed %}
+                                                                        <span class="label label-success">Completed</span>
                                                                     {% elif training_record.has_training_expired %}
                                                                         <span class="label label-danger">Expired</span>
                                                                     {% else %}
@@ -258,29 +248,6 @@
                 </i>
             </div>
         {% endif %}
-    </div>
-    <!-- Quiz Response Review Modal -->
-    <div class="modal fade"
-         id="quiz-response-modal"
-         tabindex="-1"
-         role="dialog"
-         aria-labelledby="quizResponseModalLabel">
-        <div class="modal-dialog modal-lg" role="document">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                        <span aria-hidden="true">&times;</span>
-                    </button>
-                    <h4 class="modal-title" id="quizResponseModalLabel">Quiz Review</h4>
-                </div>
-                <div class="modal-body" id="quiz-response-modal-body">
-                    <!-- Content loaded dynamically -->
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
-                </div>
-            </div>
-        </div>
     </div>
     <script>
     function send_email_link_for_all_trainings(training_ids)
@@ -362,21 +329,6 @@
                 }
             );
         }
-    }
-
-    function view_responses(record_id) {
-        let url = build_django_url("{% url 'online_training_view_responses' '99999' %}", ["99999"], [record_id]);
-
-        // Show modal with a loading state
-        $('#quiz-response-modal-body').html('<p class="text-center">Loading responses...</p>');
-        $('#quiz-response-modal').modal('show');
-
-        // Fetch and populate content
-        $.get(url, function(html_content) {
-            $('#quiz-response-modal-body').html(html_content);
-        }).fail(function() {
-            $('#quiz-response-modal-body').html('<div class="alert alert-danger">An error occurred while fetching responses.</div>');
-        });
     }
     </script>
 {% endblock %}

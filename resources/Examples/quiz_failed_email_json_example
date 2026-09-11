@@ -1,0 +1,7 @@
+{
+  "subject": "Quiz Failed: {{ training.name }} - {{ training_user.first_name }} {{ training_user.last_name }}",
+  "message": "<p>Hello,</p><p>The user <strong>{{ training_user.first_name }} {{ training_user.last_name }}</strong> ({{ training_user.email }}) has exhausted all attempts and failed the training: <strong>{{ training.name }}</strong>.</p><p>You can review their attempts or clear them for a retake in NEMO.</p>",
+  "recipients": [
+    "facility-staff@example.com"
+  ]
+}

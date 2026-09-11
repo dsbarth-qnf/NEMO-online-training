@@ -27,6 +27,7 @@ from django.views.static import serve
 from NEMO_online_training.customization import OnlineTrainingCustomization
 from NEMO_online_training.forms import TrainingRecordForm, TrainingUserForm
 from NEMO_online_training.models import Training, TrainingRecord, TrainingUser, TrainingAttempt
+from NEMO_online_training.utilities import ONLINE_TRAINING_ACTION_QUALIFY_TOOL
 
 online_training_logger = getLogger(__name__)
 
@@ -41,6 +42,68 @@ def online_training_permissions(user):
     )
 
 
+def has_full_online_training_permissions(user: User) -> bool:
+    """Superusers, User Office, and Facility Managers have unrestricted access to all trainings."""
+    return user.is_superuser or user.is_user_office or user.is_facility_manager
+
+
+def can_staff_manage_training(user: User, training: Training) -> bool:
+    """Checks if staff can manage a training based on admin status, direct staff assignment, or tool ownership."""
+    if has_full_online_training_permissions(user):
+        return True
+
+    if user.is_staff:
+        user_tools = user.my_tools() or []
+        user_tool_ids = {tool.id for tool in user_tools}
+
+        if user_tool_ids:
+            training_tool_ids = get_qualification_tool_ids_for_training(training)
+            if user_tool_ids.intersection(training_tool_ids):
+                return True
+
+    return False
+
+
+def get_manageable_trainings_for_user(user: User):
+    """Returns all enabled trainings that the staff member is authorized to manage."""
+    enabled_trainings = Training.objects.filter(enabled=True)
+
+    if has_full_online_training_permissions(user):
+        return enabled_trainings
+
+    manageable_ids = [
+        training.id
+        for training in enabled_trainings.prefetch_related("action_set")
+        if can_staff_manage_training(user, training)
+    ]
+
+    return enabled_trainings.filter(id__in=manageable_ids)
+
+
+def get_qualification_tool_ids_for_training(training: Training) -> set[int]:
+    """Retrieves tool IDs configured under the 'tool_ids' key for qualification actions."""
+    tool_ids = set()
+
+    for action in training.action_set.all():
+        if action.action_type == ONLINE_TRAINING_ACTION_QUALIFY_TOOL:
+            config = action.configuration if isinstance(action.configuration, dict) else {}
+            raw_tool_ids = config.get("tool_ids")
+
+            if isinstance(raw_tool_ids, list):
+                for tid in raw_tool_ids:
+                    try:
+                        tool_ids.add(int(tid))
+                    except (ValueError, TypeError):
+                        pass
+            elif raw_tool_ids is not None:
+                try:
+                    tool_ids.add(int(raw_tool_ids))
+                except (ValueError, TypeError):
+                    pass
+
+    return tool_ids
+
+
 @login_required
 @require_GET
 def user_online_trainings(request, training_user_id=None):
@@ -51,7 +114,7 @@ def user_online_trainings(request, training_user_id=None):
     current_user_trainings = False
     single_user_view = False
 
-    user_is_staff = user.is_user_office or user.is_facility_manager or user.is_superuser
+    user_is_staff = online_training_permissions(user)
 
     training_users = TrainingUser.objects_with_trainings()
     if not user_is_staff:
@@ -62,8 +125,21 @@ def user_online_trainings(request, training_user_id=None):
         single_user_view = True
         training_users = training_users.filter(id=training_user_id)
 
+    # 1. Determine available/manageable trainings for staff
+    if user_is_staff:
+        available_trainings = get_manageable_trainings_for_user(user)
+    else:
+        available_trainings = Training.objects.filter(enabled=True)
+
+    is_full_admin = has_full_online_training_permissions(user)
+
     if not single_user_view:
-        # Only filter if not viewing a single user
+        # 2. Filter out TrainingUsers who have no records for trainings this staff can manage
+        if user_is_staff and not is_full_admin:
+            manageable_ids = list(available_trainings.values_list("id", flat=True))
+            training_users = training_users.filter(trainingrecord__training_id__in=manageable_ids).distinct()
+
+        # Status and user type filters
         if selected_status == "complete":
             training_users = training_users.filter(all_trainings_completed=True)
         elif selected_status == "incomplete":
@@ -77,12 +153,27 @@ def user_online_trainings(request, training_user_id=None):
 
     page = SortedPaginator(training_users, request, order_by="-last_updated").get_current_page()
 
-    available_trainings = Training.objects.filter(enabled=True)
+    manageable_ids_set = (
+        set(available_trainings.values_list("id", flat=True)) if (user_is_staff and not is_full_admin) else None
+    )
+
     for training_user in page:
         training_user.available_trainings = list()
         for online_training in available_trainings:
             if online_training.applies_to_user(training_user):
                 training_user.available_trainings.append(online_training)
+
+        # 3. Filter prefetched training records so non-manageable records are hidden from rendering
+        if manageable_ids_set is not None:
+            if (
+                hasattr(training_user, "_prefetched_objects_cache")
+                and "trainingrecord_set" in training_user._prefetched_objects_cache
+            ):
+                training_user._prefetched_objects_cache["trainingrecord_set"] = [
+                    rec
+                    for rec in training_user._prefetched_objects_cache["trainingrecord_set"]
+                    if rec.training_id in manageable_ids_set
+                ]
 
     dictionary = {
         "page": page,
@@ -220,6 +311,12 @@ def training(request, user_training_id):
 def add_training_to_user(request, training_user_id, online_training_id):
     training_user = get_object_or_404(TrainingUser, pk=training_user_id)
     online_training = get_object_or_404(Training, pk=online_training_id)
+
+    if not can_staff_manage_training(request.user, online_training):
+        return JsonResponse(
+            {"success": False, "errors": {"__all__": ["You do not have permission to assign this training."]}},
+            status=403,
+        )
 
     form = TrainingRecordForm(request.POST)
     form.instance.training_user = training_user
@@ -369,7 +466,7 @@ def public_complete_user_training(request):
             attempts_remaining = "unlimited"
         else:
             attempts_remaining = max_attempts - attempts_taken
-        # Only finalize the record (mark complete, fire actions) if they passed
+        # Only finalize the record (mark complete, fire actions) if they passed or ran out of attempts
         if attempt.passed or online_training_user.failed:
             online_training_user.complete(data)
 
@@ -504,64 +601,14 @@ def process_training_submission(training_record, user_responses):
 
 
 @user_passes_test(online_training_permissions)
-def view_quiz_responses(request, record_id):
-    record = get_object_or_404(TrainingRecord, id=record_id)
-    training = record.training
-
-    attempts = record.attempts.order_by("timestamp")
-    answer_key = training.answer_key if isinstance(training.answer_key, dict) else {}
-
-    training_context = {
-        "training_user": record.training_user,
-        "training": training,
-        "record": record,
-        "completion_token": "",
-    }
-    rendered_html = render_email_template(training.html_content, training_context, request)
-
-    attempts_data = []
-
-    if attempts.exists():
-        for idx, attempt in enumerate(attempts, start=1):
-            attempts_data.append(
-                {
-                    "number": idx,
-                    "score": attempt.score_percentage,
-                    "passed": attempt.passed,
-                    "timestamp": attempt.timestamp,
-                    "responses_json": json.dumps(attempt.responses or {}),
-                }
-            )
-    else:
-        # Fallback for non-graded / completion-only records with data directly on the record
-        user_responses = getattr(record, "end_data", None) or getattr(record, "completion_data", None) or {}
-        if user_responses:
-            attempts_data.append(
-                {
-                    "number": 1,
-                    "score": 100.0 if record.completed() else 0.0,
-                    "passed": record.completed(),
-                    "timestamp": record.end or record.start,
-                    "responses_json": json.dumps(user_responses),
-                }
-            )
-
-    context = {
-        "record": record,
-        "attempts_data": attempts_data,
-        "rendered_html": rendered_html,
-        "answer_key_json": json.dumps(answer_key),
-    }
-
-    return render(request, "NEMO_online_training/user_trainings/responses_modal_content.html", context)
-
-
-@user_passes_test(online_training_permissions)
 @require_POST
 def clear_for_retake(request, record_id):
     # Retrieve the failed record
     record = get_object_or_404(TrainingRecord, id=record_id)
-
+    if not can_staff_manage_training(request.user, record.training):
+        return JsonResponse(
+            {"success": False, "errors": "You do not have permission to clear this training."}, status=403
+        )
     # Update the flag
     record.cleared_for_retake = True
     record.save()

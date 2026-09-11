@@ -63,11 +63,6 @@ urlpatterns = [
                     name="online_training_clear_for_retake",
                 ),
                 path(
-                    "training_record/<int:record_id>/responses/",
-                    online_training.view_quiz_responses,
-                    name="online_training_view_responses",
-                ),
-                path(
                     "user_trainings/<int:training_user_id>/<int:online_training_id>/add/",
                     online_training.add_training_to_user,
                     name="online_training_add_training_to_user",
