@@ -1,43 +1,3 @@
-<style>
-    /* Styling for Quiz Review Mode */
-    .quiz-review-container input,
-    .quiz-review-container select,
-    .quiz-review-container textarea,
-    .quiz-review-container button {
-        pointer-events: none; /* Disable interaction */
-    }
-    .quiz-review-container button[type="submit"] {
-        display: none !important; /* Hide submit buttons in review mode */
-    }
-    .review-correct {
-        border: 2px solid #5cb85c !important;
-        background-color: #e8f8e8 !important;
-    }
-    .review-incorrect {
-        border: 2px solid #d9534f !important;
-        background-color: #fdf7f7 !important;
-    }
-    .review-neutral {
-        border: 2px solid #337ab7 !important;
-        background-color: #f0f7fd !important;
-    }
-    .review-badge {
-        font-size: 11px;
-        margin-left: 5px;
-        padding: 2px 6px;
-        border-radius: 3px;
-        font-weight: bold;
-    }
-    .review-badge-correct { background-color: #5cb85c; color: white; }
-    .review-badge-incorrect { background-color: #d9534f; color: white; }
-    .review-badge-info { background-color: #337ab7; color: white; }
-    .review-correct-hint {
-        color: #3c763d;
-        font-size: 12px;
-        margin-top: 4px;
-        font-weight: bold;
-    }
-</style>
 <div class="well well-sm" style="margin-bottom: 15px;">
     <p style="margin-bottom: 3px;">
         <strong>User:</strong> {{ record.training_user.first_name }} {{ record.training_user.last_name }}
@@ -53,10 +13,7 @@
     <ul class="nav nav-tabs" role="tablist" style="margin-bottom: 15px;">
         {% for item in attempts_data %}
             <li role="presentation" class="{% if forloop.last %}active{% endif %}">
-                <a href="#attempt-tab-{{ item.number }}"
-                   aria-controls="attempt-tab-{{ item.number }}"
-                   role="tab"
-                   data-toggle="tab">
+                <a href="#attempt-tab-{{ item.number }}" role="tab" data-toggle="tab">
                     Submission {{ item.number }}
                     {% if item.score is not None %}
                         <span class="label {% if item.passed %}label-success{% else %}label-danger{% endif %}"
@@ -72,19 +29,24 @@
             <div role="tabpanel"
                  class="tab-pane {% if forloop.last %}active{% endif %}"
                  id="attempt-tab-{{ item.number }}">
-                <div class="well well-sm" style="margin-bottom: 15px; background-color: #fcfcfc;">
+                <div class="well well-sm" style="margin-bottom: 15px;">
                     <strong>Date & Time:</strong> {{ item.timestamp|date:"SHORT_DATETIME_FORMAT"|default:"N/A" }}
                     {% if item.score is not None %}
                         | <strong>Score:</strong> {{ item.score|floatformat:1 }}% |
                         <strong>Status:</strong>
-                        {% if item.passed %}
-                            <span class="label label-success">Passed</span>
-                        {% else %}
-                            <span class="label label-danger">Failed</span>
-                        {% endif %}
+                        <span class="label {% if item.passed %}label-success{% else %}label-danger{% endif %}">
+                            {% if item.passed %}
+                                Passed
+                            {% else %}
+                                Failed
+                            {% endif %}
+                        </span>
                     {% endif %}
                 </div>
-                <div id="quiz-review-container-{{ item.number }}" class="quiz-review-container">{{ rendered_html|safe }}</div>
+                <!-- Fieldset natively disables all inputs without custom CSS -->
+                <fieldset disabled>
+                    <div id="quiz-review-container-{{ item.number }}">{{ rendered_html|safe }}</div>
+                </fieldset>
             </div>
         {% endfor %}
     </div>
@@ -92,29 +54,19 @@
 <script>
 (function() {
     const answerKey = {{ answer_key_json|safe }};
-    Object.keys(answerKey).forEach(key => {
-        if (key.startsWith("_")) {
-            delete answerKey[key];
-        }
-    });
+    Object.keys(answerKey).forEach(k => { if (k.startsWith("_")) delete answerKey[k]; });
+
     const attempts = [
         {% for item in attempts_data %}
-        {
-            number: {{ item.number }},
-            responses: {{ item.responses_json|safe }}
-        }{% if not forloop.last %},{% endif %}
+        { number: {{ item.number }}, responses: {{ item.responses_json|safe }} }{% if not forloop.last %},{% endif %}
         {% endfor %}
     ];
 
-    function normalize(val) {
-        if (val === null || val === undefined) return "";
-        return String(val).trim().toLowerCase();
-    }
+    const normalize = v => (v === null || v === undefined) ? "" : String(v).trim().toLowerCase();
 
     function compareValues(userVal, correctVal) {
         if (Array.isArray(correctVal)) {
-            const userList = Array.isArray(userVal) ? userVal : (userVal ? [userVal] : []);
-            const uSet = new Set(userList.map(normalize));
+            const uSet = new Set((Array.isArray(userVal) ? userVal : [userVal]).map(normalize));
             const cSet = new Set(correctVal.map(normalize));
             return uSet.size === cSet.size && [...uSet].every(x => cSet.has(x));
         }
@@ -135,7 +87,7 @@
             const isCorrect = hasAnswerKey ? compareValues(userVal, correctVal) : null;
 
             const elements = container.querySelectorAll(`[name="${key}"], [id="${key}"]`);
-            if (elements.length === 0) return;
+            if (!elements.length) return;
 
             const firstElem = elements[0];
             const type = firstElem.type;
@@ -146,19 +98,13 @@
                         ? userVal.map(normalize).includes(normalize(input.value))
                         : normalize(userVal) === normalize(input.value);
 
+                    const label = input.closest('label') || input.parentElement;
+
                     if (isChecked) {
                         input.checked = true;
-                        const label = input.closest('label') || input.parentElement;
-                        const badge = document.createElement('span');
-
-                        if (hasAnswerKey) {
-                            badge.className = `review-badge ${isCorrect ? 'review-badge-correct' : 'review-badge-incorrect'}`;
-                            badge.innerText = isCorrect ? 'Correct' : 'User Selection (Incorrect)';
-                        } else {
-                            badge.className = 'review-badge review-badge-info';
-                            badge.innerText = 'User Selection';
-                        }
-                        label.appendChild(badge);
+                        const badgeClass = hasAnswerKey ? (isCorrect ? 'label-success' : 'label-danger') : 'label-info';
+                        const badgeText = hasAnswerKey ? (isCorrect ? 'Correct' : 'User Selection (Incorrect)') : 'User Selection';
+                        label.insertAdjacentHTML('beforeend', `<span class="label ${badgeClass}" style="margin-left: 5px;">${badgeText}</span>`);
                     }
 
                     if (hasAnswerKey && !isCorrect) {
@@ -167,31 +113,20 @@
                             : normalize(correctVal) === normalize(input.value);
 
                         if (isCorrectOption) {
-                            const label = input.closest('label') || input.parentElement;
-                            const badge = document.createElement('span');
-                            badge.className = 'review-badge review-badge-correct';
-                            badge.innerText = 'Correct Answer';
-                            label.appendChild(badge);
+                            label.insertAdjacentHTML('beforeend', `<span class="label label-success" style="margin-left: 5px;">Correct Answer</span>`);
                         }
                     }
                 });
             } else {
-                if (userVal !== undefined) {
-                    firstElem.value = Array.isArray(userVal) ? userVal.join(', ') : userVal;
-                }
+                if (userVal !== undefined) firstElem.value = Array.isArray(userVal) ? userVal.join(', ') : userVal;
 
+                const formGroup = firstElem.closest('.form-group') || firstElem.parentElement;
                 if (hasAnswerKey) {
-                    firstElem.classList.add(isCorrect ? 'review-correct' : 'review-incorrect');
-
+                    formGroup.classList.add(isCorrect ? 'has-success' : 'has-error');
                     if (!isCorrect) {
-                        const hint = document.createElement('div');
-                        hint.className = 'review-correct-hint';
                         const correctDisplay = Array.isArray(correctVal) ? correctVal.join(', ') : correctVal;
-                        hint.innerHTML = `<strong>Correct Answer:</strong> ${correctDisplay}`;
-                        firstElem.parentNode.insertBefore(hint, firstElem.nextSibling);
+                        firstElem.insertAdjacentHTML('afterend', `<span class="help-block"><strong>Correct Answer:</strong> ${correctDisplay}</span>`);
                     }
-                } else if (userVal !== undefined && userVal !== "") {
-                    firstElem.classList.add('review-neutral');
                 }
             }
         });
