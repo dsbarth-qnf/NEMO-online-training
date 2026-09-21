@@ -49,13 +49,18 @@ urlpatterns = [
                 ),
                 path(
                     "user_trainings/<int:user_training_id>/",
-                    online_training.training,
+                    online_training.user_training,
                     name="online_training_user_training",
                 ),
                 path(
                     "trainings/<int:online_training_id>/",
                     online_training.training_without_assignment,
                     name="online_training_training",
+                ),
+                path(
+                    "training_record/<int:record_id>/clear_for_retake/",
+                    online_training.clear_for_retake,
+                    name="online_training_clear_for_retake",
                 ),
                 path(
                     "user_trainings/<int:training_user_id>/<int:online_training_id>/add/",

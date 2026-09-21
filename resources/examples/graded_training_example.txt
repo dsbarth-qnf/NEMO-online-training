@@ -1,0 +1,51 @@
+<div class="training-quiz-container">
+  <h2>Lab Safety Assessment</h2>
+  <p>Please answer the following questions to complete your training. You must score 100% to pass.</p>
+
+  <!-- The form submits via POST automatically containing the completion_token -->
+  <form id="training-quiz-form" method="POST">
+    <input type="hidden" name="completion_token" value="{{ completion_token }}">
+
+    <!-- Question 1: Single Choice (Radio) -->
+    <div class="question-block" style="margin-bottom: 20px;">
+      <p><strong>1. Which of the following is required before entering the cleanroom?</strong></p>
+      <label>
+        <input type="radio" name="q1_ppe" value="shorts" required> Shorts
+      </label><br>
+      <label>
+        <input type="radio" name="q1_ppe" value="sandals"> Open-toed sandals
+      </label><br>
+      <label>
+        <input type="radio" name="q1_ppe" value="shoes"> Closed-toe shoes
+      </label><br>
+      <label>
+        <input type="radio" name="q1_ppe" value="sunglasses"> Sunglasses
+      </label>
+    </div>
+
+    <!-- Question 2: Multiple Choice (Checkbox) -->
+    <div class="question-block" style="margin-bottom: 20px;">
+      <p><strong>2. Select all the hazards associated with Hydrofluoric Acid (HF):</strong></p>
+      <label>
+        <input type="checkbox" name="q2_hazards" value="flammable"> Highly Flammable
+      </label><br>
+      <label>
+        <input type="checkbox" name="q2_hazards" value="inert"> Biologically Inert
+      </label><br>
+      <label>
+        <input type="checkbox" name="q2_hazards" value="corrosive"> Severe tissue corrosion
+      </label><br>
+      <label>
+        <input type="checkbox" name="q2_hazards" value="toxic"> Systemic toxicity (calcium depletion)
+      </label>
+    </div>
+
+    <!-- Question 3: Exact Text Match -->
+    <div class="question-block" style="margin-bottom: 20px;">
+      <p><strong>3. What is the standard emergency phone number to call for severe medical issues?</strong></p>
+      <input type="text" name="q3_emergency" placeholder="Enter number..." required>
+    </div>
+
+    <button type="submit" class="btn btn-primary" onclick="complete_training(this, this.form)>Submit Quiz</button>
+  </form>
+</div>

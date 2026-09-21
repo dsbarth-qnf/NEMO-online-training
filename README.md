@@ -25,7 +25,7 @@ INSTALLED_APPS = [
 
 ## Usage
 
-Add online trainings in Administration -> Detailed administration -> Online trainings
+Add online training in Administration -> Detailed administration -> Online trainings
 
 For each training, you can optionally add an action to be performed when the user completes the training.
 
@@ -40,6 +40,10 @@ The following actions are available:
     - `training`: the training being completed
     - `record`: the record of the training being completed
     - `action`: the action being performed (send email action)
+- qualify the user on a tool
+    - in the configuration, you can specify the tool ids to qualify the user on by using `tool_ids` (list of tool ids)
+- grant physical access level to the user
+    - in the configuration, you can specify the access level to grant by using `physical_access_level_ids` (list of physical access level ids)
 
 Display options:
   - set `NEMO_ONLINE_TRAINING_ADMIN_NAME` in settings.py to customize the admin section name. Default is "Online training"

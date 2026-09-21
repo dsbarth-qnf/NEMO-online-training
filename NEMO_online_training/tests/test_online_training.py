@@ -77,7 +77,9 @@ class OnlineTrainingTest(NEMOTestCaseMixin, TestCase):
         self.assertFalse(action.applies_to_user(self.new_only))
 
         # Perform action for staff user
-        user_training_staff = TrainingRecord.objects.create(training=self.training, training_user=self.new_staff)
+        user_training_staff = TrainingRecord.objects.create(
+            training=self.training, training_user=self.new_staff, status=TrainingRecord.TrainingStatus.COMPLETED
+        )
         action_handlers[action.action_type].perform(action, user_training_staff)
 
         # Verify access was extended
@@ -86,7 +88,9 @@ class OnlineTrainingTest(NEMOTestCaseMixin, TestCase):
         self.assertEqual(self.staff_user.access_expiration, expected_date)
 
         # Perform action for student user
-        user_training_student = TrainingRecord.objects.create(training=self.training, training_user=self.new_student)
+        user_training_student = TrainingRecord.objects.create(
+            training=self.training, training_user=self.new_student, status=TrainingRecord.TrainingStatus.COMPLETED
+        )
         action_handlers[action.action_type].perform(action, user_training_student)
 
         # Verify access was extended
@@ -117,7 +121,9 @@ class OnlineTrainingTest(NEMOTestCaseMixin, TestCase):
         self.assertFalse(action.applies_to_user(self.new_only))
 
         # Perform action for staff user
-        user_training_staff = TrainingRecord.objects.create(training=self.training, training_user=self.new_staff)
+        user_training_staff = TrainingRecord.objects.create(
+            training=self.training, training_user=self.new_staff, status=TrainingRecord.TrainingStatus.COMPLETED
+        )
         action_handlers[action.action_type].perform(action, user_training_staff)
 
         # Verify staff access was extended
@@ -126,7 +132,9 @@ class OnlineTrainingTest(NEMOTestCaseMixin, TestCase):
         self.assertEqual(self.staff_user.access_expiration, expected_date)
 
         # Perform action for student user
-        user_training_student = TrainingRecord.objects.create(training=self.training, training_user=self.new_student)
+        user_training_student = TrainingRecord.objects.create(
+            training=self.training, training_user=self.new_student, status=TrainingRecord.TrainingStatus.COMPLETED
+        )
         action_handlers[action.action_type].perform(action, user_training_student)
 
         # Student's access should not have changed
@@ -187,13 +195,19 @@ class OnlineTrainingTest(NEMOTestCaseMixin, TestCase):
         self.assertTrue(action.applies_to_user(self.new_only))
 
         email_count = EmailLog.objects.count()
-        user_training_student = TrainingRecord.objects.create(training=self.training, training_user=self.new_student)
+        user_training_student = TrainingRecord.objects.create(
+            training=self.training, training_user=self.new_student, status=TrainingRecord.TrainingStatus.COMPLETED
+        )
         action_handlers[action.action_type].perform(action, user_training_student)
         self.assertEqual(EmailLog.objects.count(), email_count)
-        user_training_staff = TrainingRecord.objects.create(training=self.training, training_user=self.new_staff)
+        user_training_staff = TrainingRecord.objects.create(
+            training=self.training, training_user=self.new_staff, status=TrainingRecord.TrainingStatus.COMPLETED
+        )
         action_handlers[action.action_type].perform(action, user_training_staff)
         self.assertEqual(EmailLog.objects.count(), email_count)
-        user_training_new = TrainingRecord.objects.create(training=self.training, training_user=self.new_only)
+        user_training_new = TrainingRecord.objects.create(
+            training=self.training, training_user=self.new_only, status=TrainingRecord.TrainingStatus.COMPLETED
+        )
         action_handlers[action.action_type].perform(action, user_training_new)
         self.assertEqual(EmailLog.objects.count(), email_count + 1)
 
@@ -238,7 +252,7 @@ class OnlineTrainingTest(NEMOTestCaseMixin, TestCase):
 
         # Verify training was created but not completed
         self.assertIsNone(user_training.end)
-        self.assertFalse(user_training.completed())
+        self.assertFalse(user_training.status == TrainingRecord.TrainingStatus.COMPLETED)
 
         # Get the public training URL
         signed_id = TimestampSigner().sign(str(user_training.id))
@@ -261,7 +275,7 @@ class OnlineTrainingTest(NEMOTestCaseMixin, TestCase):
         # Verify training was completed
         user_training.refresh_from_db()
         self.assertIsNotNone(user_training.end)
-        self.assertTrue(user_training.completed())
+        self.assertTrue(user_training.status == TrainingRecord.TrainingStatus.COMPLETED)
         self.assertEqual(user_training.completion_data["answer1"], "test answer")
         self.assertEqual(user_training.completion_data["score"], "95")
 
@@ -319,7 +333,7 @@ class OnlineTrainingTest(NEMOTestCaseMixin, TestCase):
 
         # Verify training was completed
         user_training.refresh_from_db()
-        self.assertTrue(user_training.completed())
+        self.assertTrue(user_training.status == TrainingRecord.TrainingStatus.COMPLETED)
 
         # Verify action was NOT triggered (student's access should remain unchanged)
         self.student_user.refresh_from_db()
@@ -376,7 +390,9 @@ class OnlineTrainingTest(NEMOTestCaseMixin, TestCase):
 
         self.assertFalse(self.staff_user.physical_access_levels.filter(pk=pal.pk).exists())
 
-        user_training = TrainingRecord.objects.create(training=self.training, training_user=self.new_staff)
+        user_training = TrainingRecord.objects.create(
+            training=self.training, training_user=self.new_staff, status=TrainingRecord.TrainingStatus.COMPLETED
+        )
         action_handlers[action.action_type].perform(action, user_training)
 
         self.assertTrue(self.staff_user.physical_access_levels.filter(pk=pal.pk).exists())
@@ -447,7 +463,9 @@ class OnlineTrainingTest(NEMOTestCaseMixin, TestCase):
 
         self.assertFalse(tool.user_set.filter(pk=self.student_user.pk).exists())
 
-        user_training = TrainingRecord.objects.create(training=self.training, training_user=self.new_student)
+        user_training = TrainingRecord.objects.create(
+            training=self.training, training_user=self.new_student, status=TrainingRecord.TrainingStatus.COMPLETED
+        )
         action_handlers[action.action_type].perform(action, user_training)
 
         self.assertTrue(tool.user_set.filter(pk=self.student_user.pk).exists())

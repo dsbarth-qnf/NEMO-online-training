@@ -7,6 +7,7 @@ from NEMO.views.customization import get_media_file_contents
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
 from django.core.signing import TimestampSigner
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models, transaction
 from django.db.models import BooleanField, Case, Count, F, Q, When
 from django.db.models.signals import post_save, pre_delete
@@ -184,11 +185,33 @@ class Training(SerializationByNameModel):
                 "<li style='list-style: initial'><b>completion_token</b>: the completion token</li>"
                 "</ul>"
                 "<p>Media files can be used with <code>{% url 'public_online_training_media' completion_token 'media_file_path' %}</code></p>"
-                "<p>Upon completion, call the JS function: <code>training_completed(dict_data)</code> to complete the training</p>"
+                "<p>Upon completion, call the JS function: <code>complete_training(button, dict_data|form)</code> to complete the training</p>"
             )
         ),
     )
     creation_time = models.DateTimeField(auto_now_add=True)
+    answer_key = models.JSONField(
+        blank=True,
+        null=True,
+        help_text=mark_safe(
+            ("<p>JSON mapping of inputs to correct answers. Leave blank to only require completion.</p>")
+        ),
+    )
+    passing_score_percentage = models.IntegerField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text=_("Required score to pass (e.g. 80). Leave blank if no quiz is required."),
+    )
+    max_attempts = models.IntegerField(
+        blank=True,
+        null=True,
+        default=0,
+        help_text=_("Maximum allowed attempts. Set to 0 or leave blank for unlimited."),
+    )
+    retry_cooldown_minutes = models.IntegerField(
+        blank=True, null=True, default=0, help_text=_("Wait time in minutes between failed attempts.")
+    )
 
     class Meta:
         ordering = ["name"]
@@ -204,8 +227,19 @@ class Training(SerializationByNameModel):
 
 
 class Action(BaseModel):
+    class TriggerCondition(models.TextChoices):
+        ON_PASS = "on_pass", _("On Pass")
+        ON_FAIL = "on_fail", _("On Failure")
+        ALWAYS = "always", _("Always")
+
     training = models.ForeignKey(Training, on_delete=models.CASCADE)
     action_type = models.CharField(max_length=CHAR_FIELD_SMALL_LENGTH)
+    trigger_condition = models.CharField(
+        max_length=10,
+        choices=TriggerCondition.choices,
+        default=TriggerCondition.ON_PASS,
+        help_text=_("Select when this action should execute."),
+    )
     configuration = models.JSONField(
         default=dict,
         blank=True,
@@ -236,13 +270,39 @@ class Action(BaseModel):
     def applies_to_user(self, training_user) -> bool:
         return UserTypeFilterField.applies_to_user(self.user_filter, training_user)
 
+    def applies_to_record(self, training_record) -> bool:
+        """Checks if the action applies to user type and the record's failed status."""
+        if not self.applies_to_user(training_record.training_user):
+            return False
+
+        if (
+            self.trigger_condition == self.TriggerCondition.ON_PASS
+            and training_record.status != TrainingRecord.TrainingStatus.COMPLETED
+        ):
+            return False
+        if (
+            self.trigger_condition == self.TriggerCondition.ON_FAIL
+            and training_record.status != TrainingRecord.TrainingStatus.FAILED
+        ):
+            return False
+
+        return True
+
     def __str__(self):
         return f"{self.action_type} for {self.training.name}"
 
 
 class TrainingRecord(BaseModel):
+    class TrainingStatus(models.TextChoices):
+        COMPLETED = "COMPLETED", _("Completed")
+        FAILED = "FAILED", _("Failed")
+        IN_PROGRESS = "IN_PROGRESS", _("In Progress")
+
     training = models.ForeignKey(Training, on_delete=models.CASCADE)
     training_user = models.ForeignKey(TrainingUser, on_delete=models.CASCADE)
+    status = models.CharField(
+        max_length=CHAR_FIELD_SMALL_LENGTH, choices=TrainingStatus.choices, default=TrainingStatus.IN_PROGRESS
+    )
     due_date = models.DateTimeField(null=True, blank=True, help_text=_("The due date/time for the training"))
     start = models.DateTimeField(null=True, blank=True, help_text=_("The date/time the training was started"))
     end = models.DateTimeField(null=True, blank=True, help_text=_("The date/time the training was completed"))
@@ -279,9 +339,6 @@ class TrainingRecord(BaseModel):
             email_category=ONLINE_TRAINING_EMAIL_CATEGORY,
         )
 
-    def completed(self):
-        return self.end is not None
-
     def completion_time(self) -> timedelta | str | None:
         if self.start and self.end:
             return format_timedelta(self.end - self.start, "{H:02}h {M:02}m {S:02}s")
@@ -289,11 +346,12 @@ class TrainingRecord(BaseModel):
             return "ongoing"
         return None
 
-    def complete(self, data: dict = None):
+    def complete(self, data: dict, passed: bool):
         from NEMO_online_training.training_actions import action_handlers
 
         self.end = timezone.now()
         self.completion_data = data
+        self.status = TrainingRecord.TrainingStatus.COMPLETED if passed else TrainingRecord.TrainingStatus.FAILED
         self.save()
         for action in self.training.action_set.all():
             handler = action_handlers[action.action_type]
@@ -308,6 +366,7 @@ class TrainingRecord(BaseModel):
                     training=self.training,
                     end__isnull=True,
                     due_date__gte=timezone.now(),
+                    status=TrainingRecord.TrainingStatus.IN_PROGRESS,
                 )
                 .exclude(id=self.id)
                 .exists()
@@ -333,6 +392,14 @@ class TrainingRecord(BaseModel):
     def __str__(self):
         due_date = f", due {format_datetime(self.due_date, 'SHORT_DATETIME_FORMAT')}" if self.due_date else ""
         return f"{self.training.name} - {self.training_user.get_name()}{due_date}"
+
+
+class TrainingAttempt(models.Model):
+    training_record = models.ForeignKey("TrainingRecord", on_delete=models.CASCADE, related_name="attempts")
+    timestamp = models.DateTimeField(auto_now_add=True)
+    score_percentage = models.FloatField(null=True, blank=True)
+    passed = models.BooleanField(default=False)
+    responses = models.JSONField(null=True, blank=True, help_text=_("The exact payload submitted by the user."))
 
 
 def notification_qs_for_training(training: TrainingRecord):

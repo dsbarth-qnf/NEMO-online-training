@@ -83,7 +83,7 @@
                                             data-target="#trainings_{{ training_user.id }}"
                                             onclick="toggle_details($('#chevron_{{ training_user.id }}'))">
                                             <span class="glyphicon glyphicon-chevron-down pull-left chevron"></span>
-                                            {% if current_user_trainings %}
+                                            {% if user.id == training_user.nemo_user.id %}
                                                 {{ training_user.first_name }}
                                             {% else %}
                                                 {{ training_user.get_name }} ({{ training_user.email }})
@@ -136,40 +136,54 @@
                                                         <tr class="online-training-sub-table-header">
                                                             <th class="">Training</th>
                                                             <th class="col-md-2 text-center">Available since</th>
-                                                            <th class="col-md-2 text-center">Due in</th>
+                                                            <th class="col-md-2 text-center">Due</th>
                                                             <th class="col-md-2 text-center">Completed</th>
                                                             {% if user_is_staff %}<th class="col-md-2 text-center">Completion time</th>{% endif %}
                                                             <th class="col-md-2 text-center">Action</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        {% for training_record in training_user.trainingrecord_set.all %}
-                                                            <tr class="{% if training_record.completed %}success{% elif training_record.has_training_expired %}danger{% endif %}">
+                                                        {% for training_record in training_user.training_records %}
+                                                            <tr class="{% if training_record.status == 'COMPLETED' %}success{% elif training_record.status == 'FAILED' or training_record.has_training_expired %}danger{% endif %}">
                                                                 <td>{{ training_record.training.name }}</td>
                                                                 <td class="text-center">{{ training_record.creation_time|date:"SHORT_DATETIME_FORMAT" }}</td>
                                                                 <td class="text-center">
-                                                                    {% if not training_record.completed and not training_record.has_training_expired %}
+                                                                    {% if training_record.status == 'IN_PROGRESS' and not training_record.has_training_expired %}
                                                                         {{ training_record.due_date|timeuntil }}
                                                                     {% else %}
                                                                         {{ training_record.due_date|default_if_none:""|date:"SHORT_DATETIME_FORMAT" }}
                                                                     {% endif %}
                                                                 </td>
                                                                 <td class="text-center">{{ training_record.end|default_if_none:""|date:"SHORT_DATETIME_FORMAT" }}</td>
-                                                                {% if user_is_staff %}<td class="text-center">{{ training_record.completion_time|default_if_none:"" }}</td>{% endif %}
-                                                                <td class="text-right">
-                                                                    {% if not training_record.completed and not training_record.has_training_expired %}
-                                                                        {% if current_user_trainings %}
-                                                                            <a class="btn btn-success btn-xs" href="{% url 'online_training_user_training' training_record.id %}">Complete</a>
-                                                                        {% else %}
-                                                                            <button class="btn btn-warning btn-xs"
-                                                                                    onclick="send_email_link_for_all_trainings([{{ training_record.id }}])">
-                                                                                {% if not training_record.completed %}Send new link{% endif %}
-                                                                            </button>
+                                                                {% if user_is_staff %}
+                                                                    <td class="text-center">
+                                                                        {{ training_record.completion_time|default_if_none:"" }}
+                                                                        {% if training_record.attempts.count > 1 %}
+                                                                            <i title="{{ training_record.attempts.count }} attemps"
+                                                                               class="glyphicon glyphicon-info-sign primary-highlight"></i>
                                                                         {% endif %}
-                                                                    {% elif training_record.completed %}
+                                                                    </td>
+                                                                {% endif %}
+                                                                <td class="text-right">
+                                                                    {% if training_record.status == 'FAILED' %}
+                                                                        <span class="label label-danger">Failed</span>
+                                                                        {% if user_is_staff %}
+                                                                            <button class="btn btn-info btn-xs" onclick="clear_for_retake({{ training_record.id }})">Clear for retake</button>
+                                                                        {% endif %}
+                                                                    {% elif training_record.status == 'COMPLETED' %}
                                                                         <span class="label label-success">Completed</span>
                                                                     {% elif training_record.has_training_expired %}
                                                                         <span class="label label-danger">Expired</span>
+                                                                    {% else %}
+                                                                        {% if user_is_staff %}
+                                                                            <button class="btn btn-warning btn-xs"
+                                                                                    onclick="send_email_link_for_all_trainings([{{ training_record.id }}])">
+                                                                                Send new link
+                                                                            </button>
+                                                                        {% endif %}
+                                                                        {% if user.id == training_user.nemo_user.id %}
+                                                                            <a class="btn btn-success btn-xs" href="{% url 'online_training_user_training' training_record.id %}">Complete</a>
+                                                                        {% endif %}
                                                                     {% endif %}
                                                                 </td>
                                                             </tr>
@@ -303,5 +317,21 @@
     {
         $('.due-date-picker').datetimepicker({format: '{{ datetime_input_js_format }}', sideBySide: true, useCurrent: false, widgetParent: '#main-user-training-table'});
     })
+
+    function clear_for_retake(record_id)
+    {
+        if (confirm("Are you sure you want to clear this user to retake this training? They will be able to enroll again if enabled.")) {
+            ajax_post(
+                build_django_url("{% url 'online_training_clear_for_retake' '99999' %}", ["99999"], [record_id]),
+                {},
+                function() {
+                    location.reload();
+                },
+                function() {
+                    alert("Error: Unable to clear training for retake.");
+                }
+            );
+        }
+    }
     </script>
 {% endblock %}

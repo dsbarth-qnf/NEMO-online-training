@@ -6,7 +6,7 @@ from django.contrib import admin, messages
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 
-from NEMO_online_training.models import Training, Action, TrainingRecord, TrainingUser
+from NEMO_online_training.models import Action, Training, TrainingAttempt, TrainingRecord, TrainingUser
 from NEMO_online_training.training_actions import action_handlers
 from NEMO_online_training.utilities import validate_training_user
 
@@ -112,10 +112,30 @@ class OnlineTrainingActionInline(admin.TabularInline):
 @admin.register(Training)
 class OnlineTrainingAdmin(admin.ModelAdmin):
     inlines = [OnlineTrainingActionInline]
-    list_display = ["name", "enabled", "is_blocking", "completion_time_limit", "creation_time", "id"]
+    list_display = [
+        "name",
+        "enabled",
+        "is_blocking",
+        "completion_time_limit",
+        "passing_score_percentage",
+        "max_attempts",
+        "creation_time",
+        "id",
+    ]
     date_hierarchy = "creation_time"
     list_filter = ["enabled", "is_blocking"]
     actions = [duplicate_online_training]
+
+
+class TrainingAttemptInline(admin.TabularInline):
+    model = TrainingAttempt
+    extra = 0
+    readonly_fields = ["timestamp", "score_percentage", "passed", "responses"]
+    can_delete = False
+
+    # Make the entire inline un-editable so history cannot be altered
+    def has_add_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(TrainingRecord)
@@ -123,8 +143,7 @@ class TrainingRecordAdmin(admin.ModelAdmin):
     list_display = [
         "training_user",
         "training",
-        "get_training_completed",
-        "get_training_expired",
+        "get_status",
         "due_date",
         "completion_time",
         "start",
@@ -133,9 +152,10 @@ class TrainingRecordAdmin(admin.ModelAdmin):
         "last_updated",
         "id",
     ]
-    list_filter = ["training"]
+    list_filter = ["training", "status"]
     date_hierarchy = "creation_time"
     readonly_fields = ["creation_time", "last_updated"]
+    inlines = [TrainingAttemptInline]
     search_fields = [
         "training_user___first_name",
         "training_user___last_name",
@@ -145,10 +165,26 @@ class TrainingRecordAdmin(admin.ModelAdmin):
         "training_user__nemo_user__email",
     ]
 
-    @admin.display(boolean=True, description="Completed")
-    def get_training_completed(self, obj: TrainingRecord) -> bool:
-        return obj.completed()
+    @admin.display(description="Status")
+    def get_status(self, obj: TrainingRecord) -> str:
+        if obj.has_training_expired():
+            return "Expired"
+        return obj.get_status_display()
 
-    @admin.display(boolean=True, description="Expired")
-    def get_training_expired(self, obj: TrainingRecord) -> bool:
-        return obj.has_training_expired()
+
+@admin.register(TrainingAttempt)
+class TrainingAttemptAdmin(admin.ModelAdmin):
+    list_display = ["training_record", "score_percentage", "passed", "timestamp"]
+    list_filter = ["passed", "timestamp", "training_record__training"]
+    readonly_fields = ["timestamp", "score_percentage", "passed", "responses", "training_record"]
+    search_fields = [
+        "training_record__training_user___first_name",
+        "training_record__training_user___last_name",
+    ]
+
+    # Prevent direct creation/editing of attempts
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

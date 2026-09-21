@@ -1,0 +1,56 @@
+<div class="container mt-4" style="max-width: 800px;">
+    <h2 class="mb-4">{{ training.name }}</h2>
+
+    <div class="alert alert-info">
+        <strong>Welcome, {{ training_user.first_name }}!</strong> Completing this module will automatically grant you authorization for this tool.
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h4 class="mb-0">Standard Operating Procedures</h4>
+        </div>
+        <div class="card-body">
+            <p>Please review the following safety and operational guidelines carefully:</p>
+            <ul>
+                <li>Always wear appropriate Personal Protective Equipment (PPE) including safety glasses and gloves.</li>
+                <li>Inspect the tool for any visible damage or irregularities before beginning operation.</li>
+                <li>Never leave the tool unattended while it is actively processing a sample.</li>
+                <li>Clean your workspace and log out of the tool interface immediately after finishing your run.</li>
+            </ul>
+            <p class="text-muted mt-3"><em>(In a real scenario, you could embed an instructional video or iframe here)</em></p>
+        </div>
+    </div>
+
+    <!-- Interactive acknowledgement -->
+    <div class="form-check mb-4">
+<input class="form-check-input" type="checkbox" id="acknowledgeCheck" value="true">
+        <label class="form-check-label" for="acknowledgeCheck">
+            I certify that I have read and understood the operating procedures, and I agree to abide by the facility's safety rules.
+        </label>
+    </div>
+
+    <!-- Complete button (disabled by default) -->
+    <button id="completeBtn" class="btn btn-success btn-lg" disabled onclick="completeToolTraining()">
+        Complete Training & Earn Qualification
+    </button>
+</div>
+
+<script>
+    // 1. Logic to enable/disable the submit button based on the checkbox
+    document.getElementById('acknowledgeCheck').addEventListener('change', function() {
+        document.getElementById('completeBtn').disabled = !this.checked;
+    });
+
+    // 2. Function called when the user clicks the complete button
+    function completeToolTraining() {
+        // You can optionally pass data back to the server to be stored in the 'completion_data' JSON field
+        const dataToSave = {
+            "acknowledgeCheck": true,
+            "browser_timestamp": new Date().toISOString()
+        };
+
+        // 3. Call NEMO's built-in completion hook
+        // This will mark the record as complete and trigger your backend Actions
+        training_completed(dataToSave);
+    }
+</script>
