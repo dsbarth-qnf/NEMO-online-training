@@ -30,17 +30,20 @@ class OnlineTrainingActionHandler(ABC):
     """
 
     @abstractmethod
-    def validate(self, configuration: dict, user_filter: list[str]):
+    def validate(self, action):
         """
         Validate the action configuration and user filter.
         Raise ValidationError if the configuration or user filter is invalid.
 
         Args:
-            configuration: The JSON configuration dict from OnlineTrainingAction
-            user_filter: The list of user types to apply the action to
+            action: The Action instance to validate
         """
-        if not isinstance(configuration, dict):
+        if not isinstance(action.configuration, dict):
             raise ValidationError(_("Configuration must be a dictionary"))
+        if action.trigger_condition not in self.allowed_trigger_conditions:
+            raise ValidationError(
+                _(f"the {action.get_trigger_condition_display()} trigger condition is not allowed for this action")
+            )
 
     def perform(self, action, user_training) -> None:
         if action.applies_to_record(user_training):
@@ -73,6 +76,14 @@ class OnlineTrainingActionHandler(ABC):
         """
         pass
 
+    @property
+    @abstractmethod
+    def allowed_trigger_conditions(self) -> list:
+        """
+        Return a list of allowed trigger conditions for this action.
+        """
+        pass
+
 
 class ExtendAccessOnlineTrainingHandler(OnlineTrainingActionHandler):
     """Handler for extending user access expiration"""
@@ -85,16 +96,22 @@ class ExtendAccessOnlineTrainingHandler(OnlineTrainingActionHandler):
     def description(self) -> str:
         return _("Extend User Access Expiration")
 
-    def validate(self, configuration: dict, user_filter: list[str]) -> None:
-        super().validate(configuration, user_filter)
+    @property
+    def allowed_trigger_conditions(self) -> list:
+        from NEMO_online_training.models import Action
 
-        if has_new_user_filter(user_filter):
+        return [Action.TriggerCondition.ON_PASS]
+
+    def validate(self, action) -> None:
+        super().validate(action)
+
+        if has_new_user_filter(action.user_filter):
             raise ValidationError({"user_filter": _("New users cannot have their access extended")})
 
-        if "extend_by_days" not in configuration:
+        if "extend_by_days" not in action.configuration:
             raise ValidationError({"configuration": _("Configuration must include 'extend_by_days' field")})
 
-        extend_by_days = configuration.get("extend_by_days")
+        extend_by_days = action.configuration.get("extend_by_days")
         if not isinstance(extend_by_days, (int, float)) or extend_by_days <= 0:
             raise ValidationError({"configuration": _("'extend_by_days' must be a positive number")})
 
@@ -122,10 +139,16 @@ class RemoveTrainingRequiredOnlineTrainingHandler(OnlineTrainingActionHandler):
     def description(self) -> str:
         return _("Remove training required on user account")
 
-    def validate(self, configuration: dict, user_filter: list[str]) -> None:
-        super().validate(configuration, user_filter)
+    @property
+    def allowed_trigger_conditions(self) -> list:
+        from NEMO_online_training.models import Action
 
-        if has_new_user_filter(user_filter):
+        return [Action.TriggerCondition.ON_PASS]
+
+    def validate(self, action) -> None:
+        super().validate(action)
+
+        if has_new_user_filter(action.user_filter):
             raise ValidationError(
                 {
                     "user_filter": _(
@@ -153,19 +176,25 @@ class SendEmailOnlineTrainingHandler(OnlineTrainingActionHandler):
     def description(self) -> str:
         return _("Send Notification Email")
 
-    def validate(self, configuration: dict, user_filter: list) -> None:
-        super().validate(configuration, user_filter)
+    @property
+    def allowed_trigger_conditions(self) -> list:
+        from NEMO_online_training.models import Action
 
-        if "subject" not in configuration:
+        return [Action.TriggerCondition.ON_PASS, Action.TriggerCondition.ON_FAIL]
+
+    def validate(self, action) -> None:
+        super().validate(action)
+
+        if "subject" not in action.configuration:
             raise ValidationError({"configuration": _("Configuration must include 'subject' field")})
 
-        if "message" not in configuration:
+        if "message" not in action.configuration:
             raise ValidationError({"configuration": _("Configuration must include 'message' field")})
 
-        if "recipients" not in configuration:
+        if "recipients" not in action.configuration:
             raise ValidationError({"configuration": _("Configuration must include 'recipients' field")})
 
-        recipients = configuration.get("recipients")
+        recipients = action.configuration.get("recipients")
         if not isinstance(recipients, list) or not recipients:
             raise ValidationError({"configuration": _("'recipients' must be a non-empty list")})
 
@@ -228,18 +257,24 @@ class GrantPhysicalAccessLevelOnlineTrainingHandler(OnlineTrainingActionHandler)
     def description(self) -> str:
         return _("Grant Physical Access Level(s)")
 
-    def validate(self, configuration: dict, user_filter: list[str]) -> None:
-        super().validate(configuration, user_filter)
+    @property
+    def allowed_trigger_conditions(self) -> list:
+        from NEMO_online_training.models import Action
 
-        if has_new_user_filter(user_filter):
+        return [Action.TriggerCondition.ON_PASS]
+
+    def validate(self, action) -> None:
+        super().validate(action)
+
+        if has_new_user_filter(action.user_filter):
             raise ValidationError(
                 {"user_filter": _("New users cannot be granted physical access levels. They must be NEMO users first.")}
             )
 
-        if "physical_access_level_ids" not in configuration:
+        if "physical_access_level_ids" not in action.configuration:
             raise ValidationError({"configuration": _("Configuration must include 'physical_access_level_ids' field")})
 
-        pal_ids = configuration.get("physical_access_level_ids")
+        pal_ids = action.configuration.get("physical_access_level_ids")
         if not isinstance(pal_ids, list) or not pal_ids:
             raise ValidationError(
                 {"configuration": _("'physical_access_level_ids' must be a non-empty list of integers")}
@@ -289,18 +324,24 @@ class QualifyUserOnToolOnlineTrainingHandler(OnlineTrainingActionHandler):
     def description(self) -> str:
         return _("Qualify User on Tool(s)")
 
-    def validate(self, configuration: dict, user_filter: list[str]) -> None:
-        super().validate(configuration, user_filter)
+    @property
+    def allowed_trigger_conditions(self) -> list:
+        from NEMO_online_training.models import Action
 
-        if has_new_user_filter(user_filter):
+        return [Action.TriggerCondition.ON_PASS]
+
+    def validate(self, action) -> None:
+        super().validate(action)
+
+        if has_new_user_filter(action.user_filter):
             raise ValidationError(
                 {"user_filter": _("New users cannot be qualified on tools. They must be NEMO users first")}
             )
 
-        if "tool_ids" not in configuration:
+        if "tool_ids" not in action.configuration:
             raise ValidationError({"configuration": _("Configuration must include 'tool_ids' field")})
 
-        tool_ids = configuration.get("tool_ids")
+        tool_ids = action.configuration.get("tool_ids")
         if not isinstance(tool_ids, list) or not tool_ids:
             raise ValidationError({"configuration": _("'tool_ids' must be a non-empty list of integers")})
 
@@ -319,7 +360,7 @@ class QualifyUserOnToolOnlineTrainingHandler(OnlineTrainingActionHandler):
             )
 
         # Check if qualification levels are supported in this version of NEMO
-        if "qualification_level_id" in configuration:
+        if "qualification_level_id" in action.configuration:
             try:
                 from NEMO.models import QualificationLevel
             except ImportError:
@@ -331,7 +372,7 @@ class QualifyUserOnToolOnlineTrainingHandler(OnlineTrainingActionHandler):
                     }
                 )
 
-            qual_level_id = configuration["qualification_level_id"]
+            qual_level_id = action.configuration["qualification_level_id"]
             if not QualificationLevel.objects.filter(id=qual_level_id).exists():
                 raise ValidationError(
                     {"configuration": _(f"Qualification level ID {qual_level_id} does not exist in the system.")}

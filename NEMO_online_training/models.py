@@ -265,7 +265,7 @@ class Action(BaseModel):
             raise ValidationError(_(f"Invalid action type: {self.action_type}"))
 
         handler = action_handlers[self.action_type]
-        handler.validate(self.configuration, self.user_filter)
+        handler.validate(self)
 
     def applies_to_user(self, training_user) -> bool:
         return UserTypeFilterField.applies_to_user(self.user_filter, training_user)
