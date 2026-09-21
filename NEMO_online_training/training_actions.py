@@ -1,8 +1,12 @@
 from abc import ABC, abstractmethod
+from http import HTTPStatus
+from logging import getLogger
 from typing import Dict
 
+import requests
 from NEMO.utilities import render_email_template
 from NEMO.views.customization import ApplicationCustomization
+from NEMO.views.users import get_identity_service
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
@@ -14,6 +18,8 @@ from NEMO_online_training.utilities import (
     ONLINE_TRAINING_ACTION_REMOVE_TRAINING_REQUIRED,
     ONLINE_TRAINING_ACTION_SEND_EMAIL,
 )
+
+training_action_logger = getLogger(__name__)
 
 
 def has_new_user_filter(user_filter: list[str]) -> bool:
@@ -126,6 +132,39 @@ class ExtendAccessOnlineTrainingHandler(OnlineTrainingActionHandler):
             nemo_user = user_training.training_user.nemo_user
             nemo_user.access_expiration = timezone.now() + timedelta(days=extend_by_days)
             nemo_user.save(update_fields=["access_expiration"])
+            self._send_update_to_identity_service(nemo_user)
+
+    def _send_update_to_identity_service(self, user):
+        identity_service = get_identity_service()
+        if identity_service.get("available", False):
+            parameters = {
+                "username": user.username,
+                "domain": user.domain,
+                "access_expiration": user.access_expiration,
+            }
+            try:
+                timeout = identity_service.get("timeout", 3)
+                result = requests.put(identity_service["url"], data=parameters, timeout=timeout)
+                if result.status_code == HTTPStatus.NOT_FOUND:
+                    training_action_logger.warning(
+                        "The username was not found on this domain. Did you spell the username correctly in this form and did you select the correct domain? Ensure the user exists on the domain in order to proceed."
+                    )
+                if result.status_code != HTTPStatus.OK:
+                    training_action_logger.error(
+                        "The identity service encountered a problem while attempting to modify a user. The HTTP error is {}: {}".format(
+                            result.status_code, result.text
+                        )
+                    )
+                    training_action_logger.warning(
+                        "The user information was not modified because the identity service encountered a problem while creating the corresponding domain account. The administrator has been notified to resolve the problem."
+                    )
+            except Exception as e:
+                training_action_logger.error(
+                    "There was a problem communicating with the identity service while attempting to modify a user. An exception was encountered: "
+                    + type(e).__name__
+                    + " - "
+                    + str(e)
+                )
 
 
 class RemoveTrainingRequiredOnlineTrainingHandler(OnlineTrainingActionHandler):
