@@ -2,9 +2,7 @@
   <h2>Lab Safety Assessment</h2>
   <p>Please answer the following questions to complete your training. You must score 100% to pass.</p>
 
-  <!-- The form submits via POST automatically containing the completion_token -->
-  <form id="training-quiz-form" method="POST">
-    <input type="hidden" name="completion_token" value="{{ completion_token }}">
+  <form onsubmit="complete_training(event.submitter, this, event)">
 
     <!-- Question 1: Single Choice (Radio) -->
     <div class="question-block" style="margin-bottom: 20px;">
@@ -46,6 +44,6 @@
       <input type="text" name="q3_emergency" placeholder="Enter number..." required>
     </div>
 
-    <button type="submit" class="btn btn-primary" onclick="complete_training(this, this.form)>Submit Quiz</button>
+    <button type="submit" class="btn btn-primary">Submit Quiz</button>
   </form>
 </div>
