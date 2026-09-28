@@ -2,7 +2,7 @@ from NEMO.serializers import ModelSerializer
 from NEMO.views.api import ModelViewSet, boolean_filters, datetime_filters, key_filters, number_filters, string_filters
 from rest_flex_fields.serializers import FlexFieldsSerializerMixin
 
-from NEMO_online_training.models import Training, Action, TrainingRecord, TrainingUser
+from NEMO_online_training.models import Training, Action, TrainingAttempt, TrainingRecord, TrainingUser
 
 
 class TrainingSerializer(FlexFieldsSerializerMixin, ModelSerializer):
@@ -39,6 +39,15 @@ class ActionSerializer(FlexFieldsSerializerMixin, ModelSerializer):
         }
 
 
+class TrainingAttemptSerializer(FlexFieldsSerializerMixin, ModelSerializer):
+    class Meta:
+        model = TrainingAttempt
+        fields = "__all__"
+        expandable_fields = {
+            "training_record": "NEMO_online_training.api.TrainingRecordSerializer",
+        }
+
+
 class TrainingViewSet(ModelViewSet):
     filename = "online_trainings"
     queryset = Training.objects.all()
@@ -47,10 +56,16 @@ class TrainingViewSet(ModelViewSet):
         "id": key_filters,
         "name": string_filters,
         "enabled": boolean_filters,
+        "user_filter": string_filters,
         "completion_time_limit": number_filters,
-        "is_blocking": boolean_filters,
+        "default_due_date_days": number_filters,
         "allow_self_enrollment": boolean_filters,
+        "is_blocking": boolean_filters,
         "html_content": string_filters,
+        "answer_key": [],
+        "passing_score_percentage": number_filters,
+        "max_attempts": number_filters,
+        "retry_cooldown_minutes": number_filters,
         "creation_time": datetime_filters,
     }
 
@@ -79,6 +94,7 @@ class TrainingRecordViewSet(ModelViewSet):
         "id": key_filters,
         "training": key_filters,
         "training_user": key_filters,
+        "status": string_filters,
         "due_date": datetime_filters,
         "start": datetime_filters,
         "end": datetime_filters,
@@ -96,6 +112,21 @@ class ActionViewSet(ModelViewSet):
         "id": key_filters,
         "training": key_filters,
         "action_type": string_filters,
+        "trigger_condition": string_filters,
         "configuration": [],
         "user_filter": string_filters,
+    }
+
+
+class TrainingAttemptViewSet(ModelViewSet):
+    filename = "training_attempts"
+    queryset = TrainingAttempt.objects.all()
+    serializer_class = TrainingAttemptSerializer
+    filterset_fields = {
+        "id": key_filters,
+        "training_record": key_filters,
+        "timestamp": datetime_filters,
+        "score_percentage": number_filters,
+        "responses": [],
+        "passed": boolean_filters,
     }

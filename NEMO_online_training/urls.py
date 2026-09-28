@@ -7,6 +7,7 @@ from NEMO_online_training.views import online_training
 # Rest API URLs
 router.register(r"online_training/actions", api.ActionViewSet)
 router.register(r"online_training/trainings", api.TrainingViewSet)
+router.register(r"online_training/training_attempts", api.TrainingAttemptViewSet)
 router.register(r"online_training/training_records", api.TrainingRecordViewSet)
 router.register(r"online_training/training_users", api.TrainingUserViewSet)
 router.registry.sort(key=sort_urls)

@@ -2,7 +2,7 @@
   <h2>Lab Safety Assessment</h2>
   <p>Please answer the following questions to complete your training. You must score 100% to pass.</p>
 
-  <form onsubmit="complete_training(event.submitter, this, event)">
+  <form onsubmit="complete_training(event.submitter, this)">
 
     <!-- Question 1: Single Choice (Radio) -->
     <div class="question-block" style="margin-bottom: 20px;">
