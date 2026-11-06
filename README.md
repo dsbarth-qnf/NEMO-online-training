@@ -23,6 +23,13 @@ INSTALLED_APPS = [
 ]
 ```
 
+## NEMO Compatibility
+
+| NEMO-Online-Training |   NEMO    |  NEMO-CE  |
+|:--------------------:|:---------:|:---------:|
+|      \>= 1.3.0       | \>= 8.1.0 | \>= 8.1.0 |
+|                      | \>= 7.4.0 | \>= 7.4.0 |
+
 ## Usage
 
 Add online training in Administration -> Detailed administration -> Online trainings

@@ -1,8 +1,11 @@
+import json
+
 from NEMO.actions import has_perm
 from NEMO.typing import QuerySetType
 from NEMO.utilities import new_model_copy
 from django import forms
 from django.contrib import admin, messages
+from django.db import models
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 
@@ -46,6 +49,15 @@ def duplicate_online_training(model_admin, request, queryset: QuerySetType[Train
             messages.error(
                 request, f"{original_name} could not be duplicated because of the following error: {str(error)}"
             )
+
+
+class PrettyJSONWidget(forms.Textarea):
+    def format_value(self, value):
+        try:
+            value = json.loads(value) if isinstance(value, str) else value
+            return json.dumps(value, indent=4)
+        except (TypeError, ValueError):
+            return value
 
 
 class TrainingUserAdminForm(forms.ModelForm):
@@ -107,6 +119,9 @@ class OnlineTrainingActionInline(admin.TabularInline):
     verbose_name = "After training is completed"
     verbose_name_plural = "After training is completed"
     form = OnlineTrainingActionInlineForm
+    formfield_overrides = {
+        models.JSONField: {"widget": PrettyJSONWidget(attrs={"rows": 10, "cols": 40})},
+    }
 
 
 @admin.register(Training)
@@ -125,12 +140,21 @@ class OnlineTrainingAdmin(admin.ModelAdmin):
     date_hierarchy = "creation_time"
     list_filter = ["enabled", "is_blocking"]
     actions = [duplicate_online_training]
+    formfield_overrides = {
+        models.JSONField: {"widget": PrettyJSONWidget(attrs={"rows": 10, "cols": 85})},
+    }
 
 
 class TrainingAttemptInline(admin.TabularInline):
     model = TrainingAttempt
     extra = 0
-    readonly_fields = ["timestamp", "score_percentage", "passed", "responses"]
+    readonly_fields = [
+        "duration",
+        "get_score_percentage",
+        "passed",
+        "get_formatted_responses",
+    ]
+    exclude = ["start", "end", "responses", "score_percentage"]
     can_delete = False
 
     # Make the entire inline un-editable so history cannot be altered
@@ -164,6 +188,9 @@ class TrainingRecordAdmin(admin.ModelAdmin):
         "training_user__nemo_user__last_name",
         "training_user__nemo_user__email",
     ]
+    formfield_overrides = {
+        models.JSONField: {"widget": PrettyJSONWidget(attrs={"rows": 10, "cols": 85})},
+    }
 
     @admin.display(description="Status")
     def get_status(self, obj: TrainingRecord) -> str:
@@ -174,13 +201,27 @@ class TrainingRecordAdmin(admin.ModelAdmin):
 
 @admin.register(TrainingAttempt)
 class TrainingAttemptAdmin(admin.ModelAdmin):
-    list_display = ["training_record", "score_percentage", "passed", "timestamp"]
-    list_filter = ["passed", "timestamp", "training_record__training"]
-    readonly_fields = ["timestamp", "score_percentage", "passed", "responses", "training_record"]
+    list_display = [
+        "training_record",
+        "get_score_percentage",
+        "passed",
+        "duration",
+    ]
+    list_filter = ["passed", "start", "end", "training_record__training"]
+    readonly_fields = [
+        "start",
+        "end",
+        "duration",
+        "get_score_percentage",
+        "passed",
+        "get_formatted_responses",
+        "training_record",
+    ]
     search_fields = [
         "training_record__training_user___first_name",
         "training_record__training_user___last_name",
     ]
+    exclude = ["responses", "score_percentage"]
 
     # Prevent direct creation/editing of attempts
     def has_add_permission(self, request):

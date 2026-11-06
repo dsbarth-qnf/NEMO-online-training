@@ -125,7 +125,8 @@ class TrainingAttemptViewSet(ModelViewSet):
     filterset_fields = {
         "id": key_filters,
         "training_record": key_filters,
-        "timestamp": datetime_filters,
+        "start": datetime_filters,
+        "end": datetime_filters,
         "score_percentage": number_filters,
         "responses": [],
         "passed": boolean_filters,

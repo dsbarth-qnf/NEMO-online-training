@@ -1,6 +1,11 @@
 from typing import List, Tuple
 
-from NEMO.fields import CommaSeparatedListConverter, CommaSeparatedTextMultipleChoiceField, DynamicChoicesTextField
+from NEMO.fields import (
+    CommaSeparatedListConverter,
+    CommaSeparatedTextMultipleChoiceField,
+    DynamicChoicesTextField,
+    WrappedFilteredSelectMultiple,
+)
 from NEMO.models import UserType
 from NEMO.utilities import safe_lazy_queryset_evaluation
 from django.contrib.admin.widgets import FilteredSelectMultiple
@@ -49,11 +54,11 @@ class UserTypeFilterField(DynamicChoicesTextField):
 
     def formfield(self, **kwargs):
         """
-        Override to provide custom widget (FilteredSelectMultiple) for admin interface.
+        Override to provide custom widget (WrappedFilteredSelectMultiple) for admin interface.
         """
         choices = kwargs.pop("choices", self.user_type_choices())
         is_stacked = kwargs.pop("is_stacked", False)
-        kwargs["widget"] = FilteredSelectMultiple(_("User Types"), is_stacked=is_stacked)
+        kwargs["widget"] = WrappedFilteredSelectMultiple(_("User Types"), is_stacked=is_stacked)
         return super(models.TextField, self).formfield(
             choices=choices, form_class=CommaSeparatedTextMultipleChoiceField, **kwargs
         )

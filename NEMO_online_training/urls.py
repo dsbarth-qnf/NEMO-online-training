@@ -64,6 +64,11 @@ urlpatterns = [
                     name="online_training_clear_for_retake",
                 ),
                 path(
+                    "training_record/<int:record_id>/edit_due_date/",
+                    online_training.edit_training_record_due_date,
+                    name="online_training_edit_training_record_due_date",
+                ),
+                path(
                     "user_trainings/<int:training_user_id>/<int:online_training_id>/add/",
                     online_training.add_training_to_user,
                     name="online_training_add_training_to_user",

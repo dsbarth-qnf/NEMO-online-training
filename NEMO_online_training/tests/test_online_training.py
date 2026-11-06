@@ -3,12 +3,14 @@ from datetime import timedelta
 from NEMO.models import EmailLog, User, UserType
 from NEMO.tests.test_utilities import NEMOTestCaseMixin
 from django.apps import apps
+from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.urls import reverse
 from django.utils import timezone
 
 from NEMO_online_training.fields import UserTypeFilterField
-from NEMO_online_training.models import Training, Action, TrainingRecord, TrainingUser
+from NEMO_online_training.models import Training, Action, TrainingAttempt, TrainingRecord, TrainingUser
 from NEMO_online_training.training_actions import action_handlers
 from NEMO_online_training.utilities import (
     ONLINE_TRAINING_ACTION_EXTEND_ACCESS,
@@ -16,6 +18,7 @@ from NEMO_online_training.utilities import (
     ONLINE_TRAINING_ACTION_QUALIFY_TOOL,
     ONLINE_TRAINING_ACTION_SEND_EMAIL,
 )
+from NEMO_online_training.views.online_training import process_training_submission
 
 
 class OnlineTrainingTest(NEMOTestCaseMixin, TestCase):
@@ -33,6 +36,8 @@ class OnlineTrainingTest(NEMOTestCaseMixin, TestCase):
             last_name="User",
             email="staff@nemo.com",
             type=self.staff_type,
+            is_staff=True,
+            is_facility_manager=True,
         )
         self.student_user = User.objects.create(
             username="student",
@@ -52,6 +57,34 @@ class OnlineTrainingTest(NEMOTestCaseMixin, TestCase):
 
     def test_plugin_is_installed(self):
         assert apps.is_installed("NEMO_online_training")
+
+    def test_training_attempt_duration(self):
+        attempt = TrainingAttempt()
+        self.assertIsNone(attempt.duration())
+
+        attempt.start = timezone.now() - timedelta(hours=1, minutes=2, seconds=3)
+        self.assertEqual(attempt.duration(), "ongoing")
+
+        attempt.end = attempt.start + timedelta(hours=1, minutes=2, seconds=3)
+        self.assertEqual(attempt.duration(), "01h 02m 3.0s")
+
+    def test_training_attempt_records_start_and_end_on_submission(self):
+        self.training.answer_key = {"question": "answer"}
+        self.training.passing_score_percentage = 100
+        self.training.save()
+        start = timezone.now() - timedelta(minutes=5)
+        record = TrainingRecord.objects.create(
+            training=self.training,
+            training_user=self.new_student,
+            start=start,
+        )
+
+        attempt = process_training_submission(record, {"question": "answer"})
+
+        self.assertEqual(attempt.start, start)
+        self.assertIsNotNone(attempt.end)
+        self.assertGreaterEqual(attempt.end, attempt.start)
+        self.assertTrue(attempt.passed)
 
     def test_extend_access_all_nemo_users(self):
         """Test that extend access action applies to all NEMO users when 'all_nemo_users' is selected."""
@@ -484,3 +517,165 @@ class OnlineTrainingTest(NEMOTestCaseMixin, TestCase):
         )
 
         self.assertFalse(action.applies_to_user(self.new_only))
+
+    def test_duplicate_pending_training_validation(self):
+        """Test that duplicate pending trainings cannot be created for the same user."""
+        record1 = TrainingRecord.objects.create(
+            training=self.training,
+            training_user=self.new_student,
+            due_date=timezone.now() + timedelta(days=10),
+        )
+        record2 = TrainingRecord(
+            training=self.training,
+            training_user=self.new_student,
+            due_date=timezone.now() + timedelta(days=15),
+        )
+        self.assertRaises(ValidationError, record2.full_clean)
+
+        self.login_as(self.staff_user)
+        response = self.client.post(
+            reverse("online_training_add_training_to_user", args=[self.new_student.id, self.training.id]),
+            {"due_date": (timezone.now() + timedelta(days=20)).strftime("%m/%d/%Y %I:%M %p")},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already has an incomplete training", response.json()["errors"]["__all__"][0])
+
+    def test_duplicate_expired_training_validation(self):
+        """Test that a new training cannot be created when an expired training exists for the user."""
+        expired_record = TrainingRecord.objects.create(
+            training=self.training,
+            training_user=self.new_student,
+            due_date=timezone.now() - timedelta(days=5),
+        )
+        self.assertTrue(expired_record.has_training_expired())
+
+        # Attempting to create another record of the same type must fail validation
+        new_record = TrainingRecord(
+            training=self.training,
+            training_user=self.new_student,
+            due_date=timezone.now() + timedelta(days=10),
+        )
+        self.assertRaises(ValidationError, new_record.full_clean)
+
+        self.login_as(self.staff_user)
+        response = self.client.post(
+            reverse("online_training_add_training_to_user", args=[self.new_student.id, self.training.id]),
+            {"due_date": (timezone.now() + timedelta(days=10)).strftime("%m/%d/%Y %I:%M %p")},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already has an incomplete training", response.json()["errors"]["__all__"][0])
+
+    def test_allow_new_training_after_completed(self):
+        """Test that a new training can be assigned after the previous one was completed."""
+        completed_record = TrainingRecord.objects.create(
+            training=self.training,
+            training_user=self.new_student,
+            due_date=timezone.now() - timedelta(days=5),
+            end=timezone.now() - timedelta(days=2),
+            status=TrainingRecord.TrainingStatus.COMPLETED,
+        )
+        new_record = TrainingRecord(
+            training=self.training,
+            training_user=self.new_student,
+            due_date=timezone.now() + timedelta(days=10),
+        )
+        # Should not raise validation error
+        new_record.full_clean()
+        new_record.save()
+        self.assertEqual(TrainingRecord.objects.filter(training_user=self.new_student).count(), 2)
+
+    def test_edit_training_record_due_date_view(self):
+        """Test that staff can edit/extend the due date of an expired or in-progress training."""
+        expired_record = TrainingRecord.objects.create(
+            training=self.training,
+            training_user=self.new_student,
+            due_date=timezone.now() - timedelta(days=5),
+        )
+        self.assertTrue(expired_record.has_training_expired())
+
+        # Unauthorized user cannot edit
+        self.login_as(self.student_user)
+        edit_url = reverse("online_training_edit_training_record_due_date", args=[expired_record.id])
+        future_date_str = (timezone.now() + timedelta(days=15)).strftime("%m/%d/%Y %I:%M %p")
+        response = self.client.post(edit_url, {"due_date": future_date_str})
+        self.assertEqual(response.status_code, 302)  # redirected by user_passes_test
+
+        # Staff user can edit (and extraneous POST data does not modify other attributes)
+        self.login_as(self.staff_user)
+        response = self.client.post(
+            edit_url,
+            {"due_date": future_date_str, "status": TrainingRecord.TrainingStatus.COMPLETED, "start": timezone.now()},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["success"])
+
+        expired_record.refresh_from_db()
+        self.assertFalse(expired_record.has_training_expired())
+        self.assertGreater(expired_record.due_date, timezone.now())
+        self.assertNotEqual(expired_record.status, TrainingRecord.TrainingStatus.COMPLETED)
+        self.assertIsNone(expired_record.start)
+
+        # Staff cannot set past date
+        past_date_str = (timezone.now() - timedelta(days=2)).strftime("%m/%d/%Y %I:%M %p")
+        response = self.client.post(edit_url, {"due_date": past_date_str})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("due_date", response.json()["errors"])
+
+    def test_clear_for_retake_permissions(self):
+        record = TrainingRecord.objects.create(
+            training=self.training,
+            training_user=self.new_student,
+            status=TrainingRecord.TrainingStatus.FAILED,
+            end=timezone.now(),
+        )
+        self.assertEqual(
+            self.training.get_clear_for_retake_permissions_field().to_python(
+                self.training.clear_for_retake_permissions
+            ),
+            ["is_staff", "is_user_office", "is_facility_manager", "is_superuser"],
+        )
+        self.assertTrue(self.training.user_can_clear_for_retake(self.staff_user))
+
+        clear_url = reverse("online_training_clear_for_retake", args=[record.id])
+        self.login_as(self.student_user)
+        response = self.client.post(clear_url)
+        self.assertEqual(response.status_code, 403)
+        response = self.client.get(reverse("online_user_trainings", args=[self.new_student.id]))
+        self.assertNotContains(response, "Clear for retake")
+
+        self.login_as(self.staff_user)
+        response = self.client.post(clear_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"success": True})
+
+        record.status = TrainingRecord.TrainingStatus.FAILED
+        record.save()
+        self.training.clear_for_retake_permissions = ["is_user_office"]
+        self.training.save()
+        response = self.client.post(clear_url)
+        self.assertEqual(response.status_code, 403)
+
+        group = Group.objects.create(name="Training retake approvers")
+        self.training.clear_for_retake_permissions = [str(group.id)]
+        self.training.save()
+        self.student_user.groups.add(group)
+
+        self.login_as(self.student_user)
+        response = self.client.get(reverse("online_user_trainings", args=[self.new_student.id]))
+        self.assertContains(response, "Clear for retake")
+        response = self.client.post(clear_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"success": True})
+
+    def test_user_online_trainings_excludes_incomplete_trainings(self):
+        """Test that user_online_trainings view excludes incomplete trainings from available_trainings."""
+        TrainingRecord.objects.create(
+            training=self.training,
+            training_user=self.new_student,
+            due_date=timezone.now() - timedelta(days=5),
+        )
+        self.login_as(self.staff_user)
+        response = self.client.get(reverse("online_user_trainings", args=[self.new_student.id]))
+        self.assertEqual(response.status_code, 200)
+        user_in_page = response.context["page"][0]
+        self.assertNotIn(self.training, user_in_page.available_trainings)

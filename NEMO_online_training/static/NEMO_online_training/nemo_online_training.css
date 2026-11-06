@@ -1,3 +1,8 @@
+#main-user-training-table .table-responsive
+{
+    overflow: visible;
+}
+
 .online-training-sub-table-wrapper
 {
     background-color: #f9f9f9;

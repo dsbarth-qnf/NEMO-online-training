@@ -36,7 +36,7 @@ class TrainingUserForm(forms.ModelForm):
         return cleaned_data
 
 
-class TrainingRecordForm(forms.ModelForm):
+class TrainingRecordDueDateForm(forms.ModelForm):
     class Meta:
         model = TrainingRecord
         fields = ["due_date"]

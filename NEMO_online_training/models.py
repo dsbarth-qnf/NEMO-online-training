@@ -1,6 +1,8 @@
+import json
 from datetime import timedelta
 
 from NEMO.constants import CHAR_FIELD_MEDIUM_LENGTH, CHAR_FIELD_SMALL_LENGTH
+from NEMO.fields import MultiRoleGroupPermissionChoiceField
 from NEMO.models import BaseModel, Notification, SerializationByNameModel, User, UserType
 from NEMO.utilities import format_datetime, format_timedelta, get_full_url, render_email_template, send_mail
 from NEMO.views.customization import get_media_file_contents
@@ -212,9 +214,25 @@ class Training(SerializationByNameModel):
     retry_cooldown_minutes = models.IntegerField(
         blank=True, null=True, default=0, help_text=_("Wait time in minutes between failed attempts.")
     )
+    clear_for_retake_permissions = MultiRoleGroupPermissionChoiceField(
+        roles=True,
+        groups=True,
+        permissions=True,
+        default="is_staff,is_user_office,is_facility_manager,is_superuser",
+        help_text=_("Select which roles, groups, or permissions can clear this training for retake."),
+    )
 
     class Meta:
         ordering = ["name"]
+
+    @classmethod
+    def get_clear_for_retake_permissions_field(cls) -> MultiRoleGroupPermissionChoiceField:
+        return cls._meta.get_field("clear_for_retake_permissions")
+
+    def user_can_clear_for_retake(self, user: User) -> bool:
+        field = self.get_clear_for_retake_permissions_field()
+        permissions = field.to_python(self.clear_for_retake_permissions)
+        return field.has_user_roles(permissions, user)
 
     def applies_to_user(self, training_user: TrainingUser) -> bool:
         return UserTypeFilterField.applies_to_user(self.user_filter, training_user)
@@ -358,14 +376,13 @@ class TrainingRecord(BaseModel):
             handler.perform(action, self)
 
     def clean(self):
-        if self.training_user and self.training:
+        if self.training_user_id and self.training_id:
             # Check for duplicate incomplete trainings
             if (
                 TrainingRecord.objects.filter(
                     training_user=self.training_user,
                     training=self.training,
                     end__isnull=True,
-                    due_date__gte=timezone.now(),
                     status=TrainingRecord.TrainingStatus.IN_PROGRESS,
                 )
                 .exclude(id=self.id)
@@ -396,10 +413,33 @@ class TrainingRecord(BaseModel):
 
 class TrainingAttempt(models.Model):
     training_record = models.ForeignKey("TrainingRecord", on_delete=models.CASCADE, related_name="attempts")
-    timestamp = models.DateTimeField(auto_now_add=True)
+    start = models.DateTimeField(help_text=_("The date/time the attempt was started"))
+    end = models.DateTimeField(auto_now_add=True, help_text=_("The date/time the attempt was completed"))
     score_percentage = models.FloatField(null=True, blank=True)
     passed = models.BooleanField(default=False)
     responses = models.JSONField(null=True, blank=True, help_text=_("The exact payload submitted by the user."))
+
+    class Meta:
+        ordering = ["-end"]
+
+    def duration(self) -> timedelta | str | None:
+        if self.start and self.end:
+            return format_timedelta(self.end - self.start, "{H:02}h {M:02}m {S:02}s")
+        elif self.start:
+            return "ongoing"
+        return None
+
+    duration.short_description = "Duration"
+
+    def get_score_percentage(self) -> str:
+        return f"{self.score_percentage:.2f}%" if self.score_percentage is not None else ""
+
+    get_score_percentage.short_description = "Score"
+
+    def get_formatted_responses(self):
+        return mark_safe(f"<pre>{json.dumps(self.responses, indent=4)}</pre>")
+
+    get_formatted_responses.short_description = "Responses"
 
 
 def notification_qs_for_training(training: TrainingRecord):

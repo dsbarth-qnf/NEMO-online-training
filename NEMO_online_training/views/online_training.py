@@ -12,7 +12,6 @@ from NEMO.views.pagination import SortedPaginator
 from django.conf import settings
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
-from django.db.models import Q
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -25,7 +24,7 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.static import serve
 
 from NEMO_online_training.customization import OnlineTrainingCustomization
-from NEMO_online_training.forms import TrainingRecordForm, TrainingUserForm
+from NEMO_online_training.forms import TrainingRecordDueDateForm, TrainingUserForm
 from NEMO_online_training.models import Training, TrainingAttempt, TrainingRecord, TrainingUser
 from NEMO_online_training.utilities import ONLINE_TRAINING_ACTION_QUALIFY_TOOL
 
@@ -138,10 +137,15 @@ def user_online_trainings(request, training_user_id=None):
     page = SortedPaginator(training_users, request, order_by="-last_updated").get_current_page()
 
     for training_user in page:
+        # We are setting the list of available trainings for each user
         training_user.available_trainings = list()
-        # filter out trainings that don't apply to the user
+        # find pending/incomplete trainings for user
+        incomplete_training_ids = set(
+            training_user.trainingrecord_set.filter(end__isnull=True).values_list("training_id", flat=True)
+        )
+        # filter out trainings that don't apply to the user or that are still pending/incomplete
         for online_training in available_trainings:
-            if online_training.applies_to_user(training_user):
+            if online_training.applies_to_user(training_user) and online_training.id not in incomplete_training_ids:
                 training_user.available_trainings.append(online_training)
         # filter out non-manageable training records
         training_user.training_records = [
@@ -149,9 +153,12 @@ def user_online_trainings(request, training_user_id=None):
             for rec in training_user.trainingrecord_set.all()
             if manageable_ids is None or rec.training_id in manageable_ids
         ]
+        for training_record in training_user.training_records:
+            training_record.user_can_clear_for_retake = training_record.training.user_can_clear_for_retake(user)
 
     dictionary = {
         "page": page,
+        "extra_params": urllib.parse.urlencode({"training_status": selected_status, "user_type": selected_user_type}),
         "user_types": UserType.objects.all(),
         "user_is_staff": user_has_staff_permissions,
         "single_user_view": single_user_view,
@@ -259,9 +266,14 @@ def training_without_assignment(request, online_training_id):
             },
         )
 
-    online_user_training, created = TrainingRecord.objects.filter(
-        Q(due_date__gte=timezone.now()) | Q(due_date__isnull=True)
-    ).get_or_create(training_user=training_user, training=online_training, end=None)
+    online_user_training, created = TrainingRecord.objects.get_or_create(
+        training_user=training_user,
+        training=online_training,
+        end=None,
+        defaults={
+            "due_date": online_training.default_due_date_from_now() if online_training.default_due_date_days else None
+        },
+    )
 
     return redirect("online_training_user_training", user_training_id=online_user_training.id)
 
@@ -292,7 +304,7 @@ def add_training_to_user(request, training_user_id, online_training_id):
             status=403,
         )
 
-    form = TrainingRecordForm(request.POST)
+    form = TrainingRecordDueDateForm(request.POST)
     form.instance.training_user = training_user
     form.instance.training = online_training
 
@@ -517,10 +529,10 @@ def check_attempt_eligibility(training_record) -> dict:
 
     # Check cooldown if they have failed previously but still have attempts remaining
     if attempts_taken > 0 and not training_record.end:
-        last_attempt = training_record.attempts.order_by("-timestamp").first()
+        last_attempt = training_record.attempts.order_by("-end").first()
 
         if training.retry_cooldown_minutes and last_attempt:
-            next_allowed_time = last_attempt.timestamp + timedelta(minutes=training.retry_cooldown_minutes)
+            next_allowed_time = last_attempt.end + timedelta(minutes=training.retry_cooldown_minutes)
 
             if timezone.now() < next_allowed_time:
                 return {
@@ -540,7 +552,12 @@ def process_training_submission(training_record, user_responses) -> TrainingAtte
 
     # SCENARIO A: Simple Completion (No Quiz Configured)
     if not graded_training.answer_key or graded_training.passing_score_percentage is None:
-        attempt = TrainingAttempt.objects.create(training_record=training_record, passed=True, responses=user_responses)
+        attempt = TrainingAttempt.objects.create(
+            training_record=training_record,
+            start=training_record.start,
+            passed=True,
+            responses=user_responses,
+        )
         return attempt
 
     # SCENARIO B: Grading Required
@@ -563,18 +580,22 @@ def process_training_submission(training_record, user_responses) -> TrainingAtte
     passed = score >= graded_training.passing_score_percentage
 
     attempt = TrainingAttempt.objects.create(
-        training_record=training_record, score_percentage=score, passed=passed, responses=user_responses
+        training_record=training_record,
+        start=training_record.start,
+        score_percentage=score,
+        passed=passed,
+        responses=user_responses,
     )
 
     return attempt
 
 
-@user_passes_test(has_online_training_staff_permissions)
+@login_required
 @require_POST
 def clear_for_retake(request, record_id):
     # Retrieve the failed record
     record = get_object_or_404(TrainingRecord, id=record_id)
-    if not can_staff_manage_training(request.user, record.training):
+    if not record.training.user_can_clear_for_retake(request.user):
         return JsonResponse(
             {"success": False, "errors": "You do not have permission to clear this training."}, status=403
         )
@@ -584,3 +605,30 @@ def clear_for_retake(request, record_id):
         record.save()
 
     return JsonResponse({"success": True})
+
+
+@user_passes_test(has_online_training_staff_permissions)
+@require_POST
+def edit_training_record_due_date(request, record_id):
+    record = get_object_or_404(TrainingRecord, id=record_id)
+    if not can_staff_manage_training(request.user, record.training):
+        return JsonResponse(
+            {"success": False, "errors": {"__all__": [_("You do not have permission to edit this training.")]}},
+            status=403,
+        )
+
+    if record.end is not None:
+        return JsonResponse(
+            {"success": False, "errors": {"__all__": [_("You cannot edit the due date of a completed training.")]}},
+            status=400,
+        )
+
+    form = TrainingRecordDueDateForm(request.POST, instance=record)
+    if form.is_valid():
+        form.save()
+        return JsonResponse({"success": True})
+    else:
+        errors = {}
+        for field, error_list in form.errors.items():
+            errors[field] = error_list
+        return JsonResponse({"success": False, "errors": errors}, status=400)

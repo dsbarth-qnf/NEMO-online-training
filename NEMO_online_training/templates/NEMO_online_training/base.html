@@ -21,7 +21,7 @@
 		}
 
         </style>
-        <script type="text/javascript">
+        <script>
 		if(self === top)
 		{
 			let antiClickjack = document.getElementById("antiClickjack");
@@ -35,18 +35,18 @@
         </script>
         {% block head %}
             {# jQuery #}
-            <script type="text/javascript" src="{% static "jquery.min.js" %}"></script>
+            <script src="{% static "jquery.min.js" %}"></script>
             {# Bootstrap #}
-            <script type="text/javascript" src="{% static "bootstrap/js/bootstrap.min.js" %}"></script>
-            <link rel="stylesheet" type="text/css" href="{% static "bootstrap/css/bootstrap.min.css" %}" />
-            <link rel="stylesheet" type="text/css" href="{% static "bootstrap/css/bootstrap-theme.min.css" %}" />
+            <script src="{% static "bootstrap/js/bootstrap.min.js" %}"></script>
+            <link rel="stylesheet" href="{% static "bootstrap/css/bootstrap.min.css" %}" />
+            <link rel="stylesheet" href="{% static "bootstrap/css/bootstrap-theme.min.css" %}" />
             {# Typeahead #}
-            <script type="text/javascript" src="{% static "typeahead.jquery.min.js" %}"></script>
+            <script src="{% static "typeahead.jquery.min.js" %}"></script>
         {% endblock %}
         {# NEMO #}
         <link rel="shortcut icon" type="image/x-icon" href="{% static 'favicon.ico' %}" />
-        <script type="text/javascript" src="{% static "nemo.js" %}"></script>
-        <link rel="stylesheet" type="text/css" href="{% static "nemo.css" %}" />
+        <script src="{% static "nemo.js" %}"></script>
+        <link rel="stylesheet" href="{% static "nemo.css" %}" />
         {% block extrahead %}{% endblock %}
         <title>
             {% block title %}{% endblock %}
@@ -72,7 +72,10 @@
                             <div class="alert alert-{% if message.level_tag == 'error' %}danger{% else %}{{ message.level_tag }}{% endif %} alert-dismissible show-on-load"
                                  {% if message.extra_tags %}{{ message.extra_tags }}{% endif %}
                                  style="display: none">
-                                <button type="button" class="close" data-dismiss="alert" aria-label="Modal close button">&times;</button>
+                                <button type="button"
+                                        class="close"
+                                        data-dismiss="alert"
+                                        aria-label="Modal close button">×</button>
                                 {{ message }}
                             </div>
                         {% endfor %}
@@ -87,7 +90,7 @@
                 </div>
                 {% block extra_whitespace %}<div style="height: 200px"></div>{% endblock %}
             </div>
-            {% include 'base/footer.html' %}
+            {% include "base/footer.html" %}
         {% endblock %}
         {# This division is used to display dialog messages via Bootstrap. #}
         <div class="modal fade" id="dialog" tabindex="-1">

@@ -1,7 +1,7 @@
 {% load custom_tags_and_filters %}
 <div class="panel-body">
     <h3 class="customization-section-title">{{ customizations|get_item:"online_training_feature_name" }} settings</h3>
-    <form method="POST" action="{% url 'customize' 'online_training' %}" class="form-horizontal">
+    <form method="post" action="{% url 'customize' 'online_training' %}" class="form-horizontal">
         {% csrf_token %}
         <div class="form-group">
             <label class="control-label col-xs-3 col-md-2" for="online_training_feature_name">Feature name</label>
@@ -14,7 +14,8 @@
             </div>
         </div>
         <div class="form-group">
-            <label class="control-label col-xs-3 col-md-2" for="online_training_link_validity_minutes">Link validity</label>
+            <label class="control-label col-xs-3 col-md-2"
+                   for="online_training_link_validity_minutes">Link validity</label>
             <div class="col-lg-3 col-md-4 col-xs-6">
                 <div class="input-group">
                     <input type="number"
@@ -87,5 +88,5 @@
             <b>record</b> - the user training record. Use <code>{% templatetag openvariable %} record.generate_link {% templatetag closevariable %}</code> to generate a unique link for the user)
         </li>
     </ul>
-    {% include 'customizations/customizations_upload.html' with element=online_training_send_new_link_email name='online training send new link email' key='online_training' %}
+    {% include "customizations/customizations_upload.html" with element=online_training_send_new_link_email name="online training send new link email" key="online_training" %}
 </div>
