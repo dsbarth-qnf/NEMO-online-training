@@ -110,7 +110,7 @@ class ExtendAccessOnlineTrainingHandler(OnlineTrainingActionHandler):
         super().validate(action)
 
         if has_new_user_filter(action.user_filter):
-            raise ValidationError({"user_filter": _("New users cannot have their access extended")})
+            raise ValidationError({"user_filter": _("Public users cannot have their access extended")})
 
         if "extend_by_days" not in action.configuration:
             raise ValidationError({"configuration": _("Configuration must include 'extend_by_days' field")})
@@ -160,7 +160,7 @@ class RemoveTrainingRequiredOnlineTrainingHandler(OnlineTrainingActionHandler):
             raise ValidationError(
                 {
                     "user_filter": _(
-                        f"New users cannot have their {ApplicationCustomization.get('facility_rules_name')} requirement removed"
+                        f"Public users cannot have their {ApplicationCustomization.get('facility_rules_name')} requirement removed"
                     )
                 }
             )
@@ -276,7 +276,11 @@ class GrantPhysicalAccessLevelOnlineTrainingHandler(OnlineTrainingActionHandler)
 
         if has_new_user_filter(action.user_filter):
             raise ValidationError(
-                {"user_filter": _("New users cannot be granted physical access levels. They must be NEMO users first.")}
+                {
+                    "user_filter": _(
+                        "Public users cannot be granted physical access levels. They must be NEMO users first."
+                    )
+                }
             )
 
         if "physical_access_level_ids" not in action.configuration:
@@ -343,7 +347,7 @@ class QualifyUserOnToolOnlineTrainingHandler(OnlineTrainingActionHandler):
 
         if has_new_user_filter(action.user_filter):
             raise ValidationError(
-                {"user_filter": _("New users cannot be qualified on tools. They must be NEMO users first")}
+                {"user_filter": _("Public users cannot be qualified on tools. They must be NEMO users first")}
             )
 
         if "tool_ids" not in action.configuration:

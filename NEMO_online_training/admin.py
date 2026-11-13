@@ -80,6 +80,7 @@ class TrainingUserAdmin(admin.ModelAdmin):
         "first_name",
         "last_name",
         "email",
+        "get_account_kind",
         "user_type",
         "get_all_blocking_trainings_completed",
         "get_all_trainings_completed",

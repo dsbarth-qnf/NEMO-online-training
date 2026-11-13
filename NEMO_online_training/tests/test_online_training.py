@@ -679,3 +679,20 @@ class OnlineTrainingTest(NEMOTestCaseMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         user_in_page = response.context["page"][0]
         self.assertNotIn(self.training, user_in_page.available_trainings)
+
+    def test_user_type_filter_uses_public_labels(self):
+        choices = dict(UserTypeFilterField.user_type_choices())
+        self.assertEqual(choices[UserTypeFilterField.ALL_NEW_USERS], "All Public users")
+        self.assertEqual(choices[f"n|{self.student_type.id}"], "Student (Public user)")
+
+    def test_staff_list_shows_public_and_nemo_account_labels(self):
+        for training_user in (self.new_only, self.new_student):
+            TrainingRecord.objects.create(training=self.training, training_user=training_user)
+
+        self.login_as(self.staff_user)
+        for training_user, account_kind in ((self.new_only, "Public"), (self.new_student, "NEMO")):
+            response = self.client.get(reverse("online_user_trainings", args=[training_user.id]))
+            self.assertRegex(
+                response.content.decode(),
+                rf'<span class="label label-default"\s+style="margin-left: 5px">{account_kind}</span>',
+            )

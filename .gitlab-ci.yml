@@ -20,37 +20,37 @@ variables:
     - python ./run_tests.py
 
 
-Test NEMO python 3.10:
-  <<: *test
-  image: python:3.10
-
 Test NEMO python 3.11:
   <<: *test
-  image: python:3.11
+  image: python:3.11-slim
 
 Test NEMO python 3.12:
   <<: *test
-  image: python:3.12
+  image: python:3.12-slim
 
 Test NEMO python 3.13:
   <<: *test
-  image: python:3.13
-
-Test NEMO-CE python 3.10:
-  <<: *test-ce
-  image: python:3.10
+  image: python:3.13-slim
 
 Test NEMO-CE python 3.11:
   <<: *test-ce
-  image: python:3.11
+  image: python:3.11-slim
 
 Test NEMO-CE python 3.12:
   <<: *test-ce
-  image: python:3.12
+  image: python:3.12-slim
 
 Test NEMO-CE python 3.13:
   <<: *test-ce
-  image: python:3.13
+  image: python:3.13-slim
+
+Test NEMO-CE python 3.14:
+  <<: *test-ce
+  image: python:3.14-slim
+
+Test NEMO-CE python 3.15:
+  <<: *test-ce
+  image: python:3.15-slim
 
 Build Package:
   image: python:3

@@ -103,6 +103,11 @@ class TrainingUser(BaseModel):
     def get_name(self):
         return self.first_name + " " + self.last_name
 
+    def get_account_kind(self) -> str:
+        return _("NEMO") if self.nemo_user_id else _("Public")
+
+    get_account_kind.short_description = _("Account")
+
     def all_incomplete_training_ids(self):
         return list(self.trainingrecord_set.filter(end__isnull=True).values_list("id", flat=True))
 
@@ -155,7 +160,7 @@ class Training(SerializationByNameModel):
     user_filter = UserTypeFilterField(
         help_text=_(
             "Select which users this training should be available to. You can select 'All NEMO users', "
-            "'All new users' (without NEMO accounts), and/or specific user types."
+            "'All public users' (without NEMO accounts), and/or specific user types."
         ),
         default=f"{UserTypeFilterField.ALL_NEMO_USERS},{UserTypeFilterField.ALL_NEW_USERS}",
     )
@@ -268,7 +273,7 @@ class Action(BaseModel):
     user_filter = UserTypeFilterField(
         help_text=_(
             "Select which users this action applies to. You can select 'All NEMO users', "
-            "'All new users' (without NEMO accounts), and/or specific user types."
+            "'All public users' (without NEMO accounts), and/or specific user types."
         ),
         default=f"{UserTypeFilterField.ALL_NEMO_USERS},{UserTypeFilterField.ALL_NEW_USERS}",
     )
@@ -397,7 +402,7 @@ class TrainingRecord(BaseModel):
                 )
             if not self.pk:
                 if not UserTypeFilterField.applies_to_user(self.training.user_filter, self.training_user):
-                    user_type = f"{'New user' if not self.training_user.nemo_user_id else 'NEMO user'}{' and ' + self.training_user.user_type.name if self.training_user.user_type else ''}"
+                    user_type = f"{'Public user' if not self.training_user.nemo_user_id else 'NEMO user'}{' and ' + self.training_user.user_type.name if self.training_user.user_type else ''}"
                     raise ValidationError(
                         {
                             NON_FIELD_ERRORS: _(

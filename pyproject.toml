@@ -1,6 +1,6 @@
 [project]
 name = "NEMO-online-training"
-version = "1.4.0"
+version = "1.4.1"
 description = "Plugin for NEMO to allow users to complete online training even before they have a NEMO account"
 keywords = ["NEMO"]
 readme = "README.md"
@@ -10,20 +10,20 @@ classifiers = [
     "Environment :: Web Environment",
     "Intended Audience :: Science/Research",
     "Intended Audience :: System Administrators",
-    "License :: Public Domain",
     "Natural Language :: English",
     "Operating System :: OS Independent",
-    "Framework :: Django :: 4.2",
-    "Programming Language :: Python :: 3.10",
+    "Framework :: Django :: 5.2",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "django",
 ]
-license = {file = "LICENSE"}
+license-files = ["LICENSE"]
 
 [project.urls]
 Homepage = "https://github.com/usnistgov/NEMO-online-training"
@@ -42,7 +42,7 @@ include = ["NEMO_online_training*"]
 NEMO_online_training = ["static/**/*", "templates/**/*"]
 
 [build-system]
-requires = ["setuptools>=61", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.black]

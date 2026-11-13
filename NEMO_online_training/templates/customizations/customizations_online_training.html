@@ -43,7 +43,7 @@
                                type="checkbox"
                                {% if online_training_user_unique_email == "enabled" %}checked{% endif %}
                                value="enabled">
-                        Check this box to prevent duplicate email addresses for new users
+                        Check this box to prevent duplicate email addresses for public users
                     </label>
                 </div>
             </div>
@@ -59,7 +59,7 @@
                                type="checkbox"
                                {% if online_training_user_type_required == "enabled" %}checked{% endif %}
                                value="enabled">
-                        Check this box to require user type selection for new users
+                        Check this box to require user type selection for public users
                     </label>
                 </div>
             </div>
@@ -74,7 +74,7 @@
         {{ customizations|get_item:"online_training_feature_name" }} link email for assigned users
     </h3>
     <p>
-        This email is sent to users (new and existing) when a training is assigned to them or when they request a new link for the training.
+        This email is sent to users (public and existing) when a training is assigned to them or when they request a new link for the training.
     </p>
     <p>The following context variables are provided when the email is rendered:</p>
     <ul>

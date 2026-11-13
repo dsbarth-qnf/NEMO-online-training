@@ -39,8 +39,8 @@
                         <div class="col-sm-3">
                             <select id="user_type" name="user_type" class="form-control">
                                 <option value="" selected>All</option>
-                                <option value="new"
-                                        {% if selected_user_type == "new" %}selected{% endif %}>New Users</option>
+                                <option value="public"
+                                        {% if selected_user_type == "public" %}selected{% endif %}>Public Users</option>
                                 <option value="nemo"
                                         {% if selected_user_type == "nemo" %}selected{% endif %}>NEMO Users</option>
                             </select>
@@ -94,6 +94,10 @@
                                                 {{ training_user.first_name }}
                                             {% else %}
                                                 {{ training_user.get_name }} ({{ training_user.email }})
+                                            {% endif %}
+                                            {% if user_is_staff %}
+                                                <span class="label label-default"
+                                                      style="margin-left: 5px">{{ training_user.get_account_kind }}</span>
                                             {% endif %}
                                         </td>
                                         {% if user_is_staff and user_types %}

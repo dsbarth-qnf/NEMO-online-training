@@ -19,7 +19,7 @@ class UserTypeFilterField(DynamicChoicesTextField):
 
     Allows selection of:
     - "all_nemo_users" - All NEMO users regardless of type
-    - "all_new_users" - All new users without NEMO accounts
+    - "all_new_users" - All Public users without NEMO accounts
     - User type IDs - Specific NEMO user types
 
     Storage format: Comma-separated string (e.g., ["all_nemo_users", "all_new_users", "1", "3", "n|1", "n|3"])
@@ -31,7 +31,7 @@ class UserTypeFilterField(DynamicChoicesTextField):
 
     # Display labels
     LABEL_ALL_NEMO = _("All NEMO users")
-    LABEL_ALL_NEW = _("All New users")
+    LABEL_ALL_NEW = _("All Public users")
 
     @classmethod
     def user_type_choices(cls) -> List[Tuple[str, str]]:
@@ -49,7 +49,7 @@ class UserTypeFilterField(DynamicChoicesTextField):
         user_types, error = safe_lazy_queryset_evaluation(UserType.objects.all().order_by("name"))
         for user_type in user_types:
             choices.append((str(user_type.id), user_type.name + " (NEMO user)"))
-            choices.append(("n|" + str(user_type.id), user_type.name + " (New user)"))
+            choices.append(("n|" + str(user_type.id), user_type.name + " (Public user)"))
         return choices
 
     def formfield(self, **kwargs):
