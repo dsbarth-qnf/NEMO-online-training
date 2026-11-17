@@ -1,11 +1,34 @@
 from NEMO.serializers import ModelSerializer
 from NEMO.views.api import ModelViewSet, boolean_filters, datetime_filters, key_filters, number_filters, string_filters
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_flex_fields.serializers import FlexFieldsSerializerMixin
+from rest_framework.exceptions import ValidationError
 
 from NEMO_online_training.models import Training, Action, TrainingAttempt, TrainingRecord, TrainingUser
 
 
 class TrainingSerializer(FlexFieldsSerializerMixin, ModelSerializer):
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        instance = self.instance or Training()
+        # PATCH may omit either relation, so validate the resulting configuration.
+        tools = attrs.get("blocking_tools")
+        if tools is None:
+            tools = instance.blocking_tools.all() if instance.pk else []
+        areas = attrs.get("blocking_areas")
+        if areas is None:
+            areas = instance.blocking_areas.all() if instance.pk else []
+        try:
+            Training.validate_blocking_targets(
+                attrs.get("is_blocking", instance.is_blocking),
+                attrs.get("blocking_scope", instance.blocking_scope),
+                tools,
+                areas,
+            )
+        except DjangoValidationError as error:
+            raise ValidationError(error.message_dict)
+        return attrs
+
     class Meta:
         model = Training
         fields = "__all__"
@@ -61,6 +84,9 @@ class TrainingViewSet(ModelViewSet):
         "default_due_date_days": number_filters,
         "allow_self_enrollment": boolean_filters,
         "is_blocking": boolean_filters,
+        "blocking_scope": string_filters,
+        "blocking_tools": key_filters,
+        "blocking_areas": key_filters,
         "html_content": string_filters,
         "answer_key": [],
         "passing_score_percentage": number_filters,

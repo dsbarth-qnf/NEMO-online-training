@@ -5,7 +5,7 @@ from NEMO.typing import QuerySetType
 from NEMO.utilities import new_model_copy
 from django import forms
 from django.contrib import admin, messages
-from django.db import models
+from django.db import models, transaction
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 
@@ -31,14 +31,17 @@ def duplicate_online_training(model_admin, request, queryset: QuerySetType[Train
                 )
                 continue
             else:
-                old_actions = online_training.action_set.all()
-                new_training = new_model_copy(online_training)
-                new_training.name = new_name
-                new_training.save()
-                for action in old_actions:
-                    new_action = new_model_copy(action)
-                    new_action.training = new_training
-                    new_action.save()
+                with transaction.atomic():
+                    old_actions = online_training.action_set.all()
+                    new_training = new_model_copy(online_training)
+                    new_training.name = new_name
+                    new_training.save()
+                    new_training.blocking_tools.set(online_training.blocking_tools.all())
+                    new_training.blocking_areas.set(online_training.blocking_areas.all())
+                    for action in old_actions:
+                        new_action = new_model_copy(action)
+                        new_action.training = new_training
+                        new_action.save()
                 messages.success(
                     request,
                     mark_safe(
@@ -125,13 +128,32 @@ class OnlineTrainingActionInline(admin.TabularInline):
     }
 
 
+class OnlineTrainingAdminForm(forms.ModelForm):
+    class Meta:
+        model = Training
+        fields = "__all__"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        Training.validate_blocking_targets(
+            cleaned_data.get("is_blocking"),
+            cleaned_data.get("blocking_scope"),
+            cleaned_data.get("blocking_tools"),
+            cleaned_data.get("blocking_areas"),
+        )
+        return cleaned_data
+
+
 @admin.register(Training)
 class OnlineTrainingAdmin(admin.ModelAdmin):
+    form = OnlineTrainingAdminForm
+    filter_horizontal = ["blocking_tools", "blocking_areas"]
     inlines = [OnlineTrainingActionInline]
     list_display = [
         "name",
         "enabled",
         "is_blocking",
+        "blocking_scope",
         "completion_time_limit",
         "passing_score_percentage",
         "max_attempts",
@@ -139,7 +161,7 @@ class OnlineTrainingAdmin(admin.ModelAdmin):
         "id",
     ]
     date_hierarchy = "creation_time"
-    list_filter = ["enabled", "is_blocking"]
+    list_filter = ["enabled", "is_blocking", "blocking_scope"]
     actions = [duplicate_online_training]
     formfield_overrides = {
         models.JSONField: {"widget": PrettyJSONWidget(attrs={"rows": 10, "cols": 85})},

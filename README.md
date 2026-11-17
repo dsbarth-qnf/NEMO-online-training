@@ -34,6 +34,42 @@ INSTALLED_APPS = [
 
 Add online training in Administration -> Detailed administration -> Online trainings
 
+### Blocking access
+
+Check **Is blocking** and choose a **Blocking scope**:
+
+- **Everything** (the default) preserves global blocking, even when no tools or areas are selected.
+- **Selected tools and areas** requires at least one selected tool or area. Tools block reservations and activation,
+  including their child/alternate tools. Areas block entry and reservations, including all subareas. Select tools
+  separately to restrict them directly; selecting an area does not add tool restrictions.
+
+Both target lists can be used together. Targets are ignored for Everything and when Is blocking is unchecked.
+Removing or deleting targets never changes a selected-scope training into a global restriction. Duplicating a training
+copies its scope and targets.
+
+Blocking follows the assignment's **status**, not its completion timestamp:
+
+- In-progress training blocks once its due date is past. Without a due date, it does not block.
+- A final quiz failure (all attempts exhausted, status Failed) blocks immediately, even before or without a due date.
+  Individual unsuccessful attempts with retries remaining still follow the due-date rule.
+- Clearing a failure for retake restores the normal due-date rule. Existing retake permissions and deadline-editing
+  procedures still apply; an overdue training needs its due date extended before the user can retake it.
+- Successful completion resolves the assignment and any older unsuccessful assignments of the same training for that
+  user. Assignment order is creation time, with ID breaking ties; an earlier pass does not exempt a newer assignment.
+
+Existing staff exemptions and reservation overrides still apply. Other restrictions enforced by NEMO remain in effect.
+Denials list only the training requirements relevant to the requested action.
+
+The training API exposes `blocking_scope` (`all` or `selected`), `blocking_tools` (tool IDs), and `blocking_areas` (area IDs),
+and supports filtering by these fields. Existing clients that omit the fields retain the default global scope.
+Partial updates validate the resulting selections; an active selected-scope restriction cannot be saved without targets.
+
+When upgrading, run Django migrations with your deployment's settings and restart the application. Existing trainings
+receive the Everything scope. **Behavior correction:** existing final failures now block immediately unless a newer
+assignment of that training was passed. Previously they could stop blocking because they had an end timestamp.
+
+### Completion actions
+
 For each training, you can optionally add an action to be performed when the user completes the training.
 
 The following actions are available:

@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from NEMO.constants import CHAR_FIELD_MEDIUM_LENGTH, CHAR_FIELD_SMALL_LENGTH
 from NEMO.fields import MultiRoleGroupPermissionChoiceField
-from NEMO.models import BaseModel, Notification, SerializationByNameModel, User, UserType
+from NEMO.models import Area, BaseModel, Notification, SerializationByNameModel, Tool, User, UserType
 from NEMO.utilities import format_datetime, format_timedelta, get_full_url, render_email_template, send_mail
 from NEMO.views.customization import get_media_file_contents
 from django.contrib.contenttypes.models import ContentType
@@ -11,7 +11,7 @@ from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
 from django.core.signing import TimestampSigner
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models, transaction
-from django.db.models import BooleanField, Case, Count, F, Q, When
+from django.db.models import BooleanField, Case, Count, Exists, F, OuterRef, Q, When
 from django.db.models.signals import post_save, pre_delete
 from django.dispatch import receiver
 from django.urls import reverse
@@ -89,16 +89,44 @@ class TrainingUser(BaseModel):
         return not self.trainingrecord_set.filter(end__isnull=True).exists()
 
     def all_blocking_trainings_completed(self):
-        """
-        Blocking trainings are those that are marked as blocking and have a due date in the past.
-        """
-        now = timezone.now()
-        return not self.trainingrecord_set.filter(
-            training__is_blocking=True, due_date__lt=now, end__isnull=True
-        ).exists()
+        """Whether there are no outstanding blocking requirements, across all scopes."""
+        return not self.all_blocking_trainings_due().exists()
 
     def all_blocking_trainings_due(self):
-        return self.trainingrecord_set.filter(training__is_blocking=True, due_date__lt=timezone.now(), end__isnull=True)
+        """Outstanding requirements: final failures or overdue in-progress assignments.
+
+        A successful newer assignment satisfies older assignments of the same training.
+        The end timestamp is not a success indicator: failed and reopened records have one too.
+        """
+        newer_pass = TrainingRecord.objects.filter(
+            training_user=self,
+            training_id=OuterRef("training_id"),
+            status=TrainingRecord.TrainingStatus.COMPLETED,
+        ).filter(
+            Q(creation_time__gt=OuterRef("creation_time"))
+            | Q(creation_time=OuterRef("creation_time"), pk__gt=OuterRef("pk"))
+        )
+        return self.trainingrecord_set.filter(
+            Q(status=TrainingRecord.TrainingStatus.FAILED)
+            | Q(status=TrainingRecord.TrainingStatus.IN_PROGRESS, due_date__lt=timezone.now()),
+            ~Exists(newer_pass),
+            training__is_blocking=True,
+        )
+
+    def blocking_trainings_due_for(self, item: Tool | Area | None = None):
+        """Global requirements plus those matching this resource; no item means global only."""
+        scope = Q(training__blocking_scope=Training.BlockingScope.ALL)
+        if isinstance(item, Tool):
+            scope |= Q(
+                training__blocking_scope=Training.BlockingScope.SELECTED,
+                training__blocking_tools__in={item.pk, item.tool_or_parent_id()},
+            )
+        elif isinstance(item, Area):
+            scope |= Q(
+                training__blocking_scope=Training.BlockingScope.SELECTED,
+                training__blocking_areas__in=item.get_ancestors(include_self=True),
+            )
+        return self.all_blocking_trainings_due().filter(scope).distinct()
 
     def get_name(self):
         return self.first_name + " " + self.last_name
@@ -153,6 +181,10 @@ class TrainingUser(BaseModel):
 
 
 class Training(SerializationByNameModel):
+    class BlockingScope(models.TextChoices):
+        ALL = "all", _("Everything")
+        SELECTED = "selected", _("Selected tools and areas")
+
     name = models.CharField(max_length=CHAR_FIELD_MEDIUM_LENGTH, unique=True)
     enabled = models.BooleanField(
         default=True, help_text=_("If unchecked, this training will not be available to users")
@@ -176,7 +208,34 @@ class Training(SerializationByNameModel):
     is_blocking = models.BooleanField(
         default=False,
         help_text=_(
-            "If checked, prevents the linked NEMO user from performing other actions until this training is completed"
+            "Restrict the linked NEMO user's access when this training is overdue or all quiz attempts have failed. "
+            "A successful completion satisfies the requirement; clearing a failure for retake restores the due-date rule."
+        ),
+    )
+    blocking_scope = models.CharField(
+        max_length=20,
+        choices=BlockingScope.choices,
+        default=BlockingScope.ALL,
+        help_text=_(
+            "Everything preserves global blocking, even with no targets selected. Only used when blocking is checked."
+        ),
+    )
+    blocking_tools = models.ManyToManyField(
+        Tool,
+        blank=True,
+        related_name="blocking_online_trainings",
+        help_text=_(
+            "For selected scope, block reservations and activation of these tools and their child tools. "
+            "Ignored for Everything."
+        ),
+    )
+    blocking_areas = models.ManyToManyField(
+        Area,
+        blank=True,
+        related_name="blocking_online_trainings",
+        help_text=_(
+            "For selected scope, block entry and reservations for these areas and their subareas. "
+            "Select tools separately to restrict them directly. Ignored for Everything."
         ),
     )
     html_content = models.TextField(
@@ -229,6 +288,19 @@ class Training(SerializationByNameModel):
 
     class Meta:
         ordering = ["name"]
+
+    @staticmethod
+    def validate_blocking_targets(is_blocking, blocking_scope, blocking_tools, blocking_areas):
+        # M2M selections must be validated by forms/serializers, before their relations are saved.
+        if (
+            is_blocking
+            and blocking_scope == Training.BlockingScope.SELECTED
+            and not blocking_tools
+            and not blocking_areas
+        ):
+            raise ValidationError(
+                {"blocking_scope": _("Select at least one tool or area for selected blocking scope.")}
+            )
 
     @classmethod
     def get_clear_for_retake_permissions_field(cls) -> MultiRoleGroupPermissionChoiceField:
